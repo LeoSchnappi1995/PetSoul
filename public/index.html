@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#f4f0e8" />
+    <title>Petinder</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <button class="icon-button" id="profileBtn" aria-label="个人主页" title="个人主页">
+          <span class="avatar-mini">阿</span>
+        </button>
+        <div>
+          <p class="eyebrow" id="viewKicker">Petinder</p>
+          <h1 id="viewTitle">今晚一起遛吗</h1>
+        </div>
+        <button class="icon-button" id="filterBtn" aria-label="筛选" title="筛选">
+          <span class="filter-icon"></span>
+        </button>
+      </header>
+
+      <section class="view active" id="view-petinder" aria-label="Petinder">
+        <div class="mode-strip" role="tablist" aria-label="匹配模式">
+          <button class="mode active" data-mode="nearby">附近</button>
+          <button class="mode" data-mode="breed">同品种</button>
+          <button class="mode" data-mode="weekend">周末可约</button>
+        </div>
+
+        <section class="swipe-stage" aria-live="polite">
+          <article class="pet-card" id="petCard">
+            <div class="swipe-stamp like-stamp">想约</div>
+            <div class="swipe-stamp nope-stamp">先不了</div>
+            <div class="photo-stack">
+              <img id="profilePhoto" alt="" />
+              <div class="card-badges" id="cardBadges"></div>
+            </div>
+            <div class="card-copy">
+              <div>
+                <p class="distance" id="distanceText"></p>
+                <h2 id="profileName"></h2>
+              </div>
+              <p id="profileBio"></p>
+              <div class="tag-row" id="tagRow"></div>
+            </div>
+          </article>
+        </section>
+
+        <div class="action-row">
+          <button class="round-action reject" id="passBtn" aria-label="左滑跳过" title="左滑跳过">×</button>
+          <button class="round-action boost" id="waveBtn" aria-label="打招呼" title="打招呼">⌁</button>
+          <button class="round-action like" id="likeBtn" aria-label="右滑想一起遛" title="右滑想一起遛">✓</button>
+        </div>
+
+        <section class="today-plan">
+          <div>
+            <p class="eyebrow">今晚 19:30</p>
+            <h3>世纪公园南门慢遛局</h3>
+          </div>
+          <button class="text-button" id="joinWalkBtn">加入</button>
+        </section>
+      </section>
+
+      <section class="view" id="view-planet" aria-label="Pet 星球">
+        <div class="planet-toolbar" role="tablist" aria-label="圈子筛选">
+          <button class="chip active" data-ring="all">全部</button>
+          <button class="chip" data-ring="dog">遛狗圈</button>
+          <button class="chip" data-ring="cat">遛猫圈</button>
+          <button class="chip" data-ring="breed">同城品种圈</button>
+        </div>
+
+        <section class="planet-banner" aria-label="同城品种星球"></section>
+
+        <section class="map-board" id="mapBoard" aria-label="城市宠物圈地图">
+          <div class="map-label label-jingan">静安寺</div>
+          <div class="map-label label-xuhui">徐汇滨江</div>
+          <div class="map-label label-pudong">陆家嘴</div>
+          <div class="street s1"></div>
+          <div class="street s2"></div>
+          <div class="street s3"></div>
+          <div class="street s4"></div>
+          <div class="river"></div>
+        </section>
+
+        <section class="circle-list" id="circleList" aria-label="附近圈子"></section>
+      </section>
+
+      <section class="view" id="view-messages" aria-label="消息">
+        <div class="message-summary">
+          <div>
+            <p class="eyebrow">好友互轰</p>
+            <h2>一句话发起今天的照顾检查</h2>
+          </div>
+          <span id="bombCount">0</span>
+        </div>
+        <section class="chat-list" id="chatList"></section>
+      </section>
+    </main>
+
+    <nav class="tabbar" aria-label="主导航">
+      <button class="tab active" data-view="petinder">
+        <span class="tab-icon paw"></span>
+        <span>Petinder</span>
+      </button>
+      <button class="tab" data-view="planet">
+        <span class="tab-icon planet"></span>
+        <span>Pet 星球</span>
+      </button>
+      <button class="tab" data-view="messages">
+        <span class="tab-icon bubble"></span>
+        <span>消息</span>
+      </button>
+    </nav>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <div class="bomb-overlay" id="bombOverlay" aria-hidden="true">
+      <div class="bomb-dialog" role="dialog" aria-modal="true" aria-label="遛了么轰炸">
+        <div class="dog-glare" aria-hidden="true">
+          <div class="dog-ear left"></div>
+          <div class="dog-ear right"></div>
+          <div class="dog-face">
+            <span class="dog-brow left"></span>
+            <span class="dog-brow right"></span>
+            <span class="dog-eye left"></span>
+            <span class="dog-eye right"></span>
+            <span class="dog-nose"></span>
+            <span class="dog-mouth"></span>
+          </div>
+        </div>
+        <p class="bomb-title">遛了么？</p>
+        <p class="bomb-copy" id="bombCopy">小狗正在盯着你看。</p>
+        <div class="bomb-actions">
+          <button type="button" class="apology-btn" id="apologyBtn">爸爸错了</button>
+          <button type="button" class="walked-btn" id="walkedBtn">遛了遛了</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

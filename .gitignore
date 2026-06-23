@@ -1,0 +1,16 @@
+node_modules/
+.env
+uploads/
+.DS_Store
+npm-debug.log*
+
+# Local workflow artifacts
+.cc-connect/
+feishu_media/
+lark-doc-preview/
+output/
+prd-artifacts/
+lark-*-auth*.png
+lark_*_auth*.png
+lark_spark_app_write_auth_qr.png
+petinder-competition-intro.feishu.xml
