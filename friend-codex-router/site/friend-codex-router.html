@@ -195,7 +195,7 @@
     .feature h3 { margin: 0 0 9px; font-size: 17px; }
     .feature p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.65; }
 
-    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; counter-reset: steps; }
+    .steps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; counter-reset: steps; }
     .step { position: relative; padding: 24px; counter-increment: steps; }
     .step::before { content: counter(steps); display: grid; width: 32px; height: 32px; place-items: center; margin-bottom: 18px; border-radius: 10px; color: white; background: var(--ink); font-size: 13px; font-weight: 750; }
     .step h3 { margin: 0 0 9px; font-size: 17px; }
@@ -244,7 +244,7 @@
   <main class="page">
     <nav class="nav">
       <div class="brand"><span class="logo">FCR</span><span>Friend Codex Router</span></div>
-      <span class="version">macOS · v0.3.0 内测版</span>
+      <span class="version">macOS · v0.3.1 内测版</span>
     </nav>
 
     <section class="hero">
@@ -253,7 +253,7 @@
         <h1>让 Codex 自由接入<br><span class="gradient-text">DeepSeek 与 Qwen</span></h1>
         <p class="lead">文字任务使用低成本文字模型；图片只在首次出现时调用视觉模型理解一次，后续对话复用摘要。右上角菜单栏实时展示每个模型的调用次数、Token 与费用。</p>
         <div class="actions">
-          <a class="download" href="https://api.leoyy.site/friend-codex-router/Friend-Codex-Router-0.3.0-internal.dmg">
+          <a class="download" href="https://api.leoyy.site/friend-codex-router/Friend-Codex-Router-0.3.1-internal.dmg">
             <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3a1 1 0 0 1 1 1v9.59l3.3-3.3a1 1 0 1 1 1.4 1.42l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.42l3.3 3.3V4a1 1 0 0 1 1-1ZM5 19a1 1 0 0 1 1 1v1h12v-1a1 1 0 1 1 2 0v1a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-1a1 1 0 0 1 1-1Z"/></svg>
             下载 macOS 安装包
           </a>
@@ -271,7 +271,7 @@
           <div class="model-row"><strong>Alibaba Bailian / qwen3-coder-plus · $4.91</strong><span>52 次 · 输入 410K · 输出 96K</span></div>
           <div class="model-row"><strong>Qwen Vision / qwen-vl-max · $0.73</strong><span>6 次视觉理解 · 缓存命中 31 次</span></div>
           <div class="menu-action">立即刷新　　设置…</div>
-          <div class="menu-action">检查更新…　　版本 0.3.0</div>
+          <div class="menu-action">检查更新…　　版本 0.3.1</div>
         </div>
       </div>
     </section>
@@ -288,12 +288,11 @@
     </section>
 
     <section class="section">
-      <h2>三步开始使用</h2>
-      <p class="section-intro">当前为内测版。只需要本安装包，以及自己的 DeepSeek、Qwen API Key。</p>
+      <h2>下载后，填两个 Key 即可</h2>
+      <p class="section-intro">无需安装其他 Router，无需创建 Client Key，也不需要手动修改 Codex 配置。</p>
       <div class="steps">
         <article class="step"><h3>安装 Friend Router</h3><p>下载 DMG，将 App 拖入 Applications。首次请右键 App，选择“打开”。</p></article>
-        <article class="step"><h3>填写两个 Key</h3><p>在右上角菜单选择“设置…”，填写 DeepSeek 与 Qwen/DashScope API Key，并保存到 macOS 钥匙串。</p></article>
-        <article class="step"><h3>连接 Codex</h3><p>选择默认文字模型与图片理解模型，点击“安装并连接 Codex”即可开始使用。</p></article>
+        <article class="step"><h3>填 Key 并连接</h3><p>在右上角菜单选择“设置…”，填写 DeepSeek 与 Qwen/DashScope API Key，点击“保存 Key 并连接 Codex”。</p></article>
       </div>
       <div class="notice"><strong>内测提醒：</strong>当前安装包采用内测签名，macOS 可能提示无法验证开发者。请仅从本页面下载，并核对下面的 SHA-256。</div>
     </section>
@@ -302,13 +301,13 @@
       <h2>安装包完整性</h2>
       <p class="section-intro">下载后可在终端执行 <code>shasum -a 256 文件路径</code>，结果应与下方完全一致。</p>
       <div class="checksum-card">
-        <code id="checksum">a2bc1069b73a164d68903e49914c055afb01904ea0438dd259dcefb0948b7fd7</code>
+        <code id="checksum">c33e89de4c003db10756b63fc3142565d60ef6ddff7ea39f2f985a1962df4505</code>
         <button class="copy" id="copy" type="button">复制 SHA-256</button>
       </div>
     </section>
 
     <footer>
-      <span>Friend Codex Router · v0.3.0 Internal</span>
+      <span>Friend Codex Router · v0.3.1 Internal</span>
       <span>公开下载由 api.leoyy.site 提供</span>
     </footer>
   </main>

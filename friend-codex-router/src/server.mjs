@@ -140,7 +140,7 @@ function health(config) {
   return {
     ok: true,
     service: "friend-codex-router",
-    version: "0.3.0",
+    version: "0.3.1",
     listen: `${config.listenHost}:${config.listenPort}`,
     providers: ["deepseek", "qwen"],
     visionModel: config.visionModel,

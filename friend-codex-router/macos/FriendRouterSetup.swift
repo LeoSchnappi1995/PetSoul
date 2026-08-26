@@ -103,17 +103,17 @@ struct SetupView: View {
                     Text("本地状态：Codex 本地 Key \(storedText(localClientKeyStored)) · DeepSeek Key \(storedText(deepSeekKeyStored)) · Qwen Key \(storedText(qwenKeyStored))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Button("保存 API Key") { Task { await saveCredentials() } }
+                    Button(deepSeekKeyStored && qwenKeyStored ? "重新连接 Codex" : "保存 Key 并连接 Codex") { Task { await install() } }
                         .buttonStyle(.borderedProminent)
-                        .disabled(working || deepSeekKey.isEmpty || qwenKey.isEmpty)
-                    Text("两个服务商 Key 都由本 App 保存进 macOS 钥匙串；Codex 只拿到自动生成的本地 Key。安全原因不会回填明文。")
+                        .disabled(working || (!deepSeekKeyStored && deepSeekKey.isEmpty) || (!qwenKeyStored && qwenKey.isEmpty))
+                    Text("首次填写两个 Key 后只需点击一次。本 App 会保存 Key、启动本地网关并自动连接 Codex。安全原因不会回填明文。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .padding(8)
             }
 
-            GroupBox("2. 模型") {
+            GroupBox("2. 模型路由（可选）") {
                 VStack(alignment: .leading, spacing: 12) {
                     Picker("默认文字模型", selection: $textModel) {
                         ForEach(textModels, id: \.self) { Text($0).tag($0) }
@@ -133,12 +133,9 @@ struct SetupView: View {
                 .padding(8)
             }
 
-            GroupBox("3. 自动接入 Codex") {
+            GroupBox("3. 状态与恢复") {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Button("安装并连接 Codex") { Task { await install() } }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(working || (!deepSeekKeyStored && deepSeekKey.isEmpty) || (!qwenKeyStored && qwenKey.isEmpty))
                         Button("恢复原 Codex 配置") { Task { await restore() } }
                             .disabled(working)
                         Button("检查运行状态") { Task { await checkHealth() } }
@@ -161,27 +158,6 @@ struct SetupView: View {
         .onAppear {
             loadStoredState()
             monitor.start()
-        }
-    }
-
-    @MainActor
-    private func saveCredentials() async {
-        working = true
-        defer { working = false }
-        do {
-            let environment = [
-                "FRIEND_ROUTER_DEEPSEEK_KEY": deepSeekKey,
-                "FRIEND_ROUTER_QWEN_KEY": qwenKey,
-                "FRIEND_ROUTER_CODEX_MODEL": textModel,
-                "FRIEND_ROUTER_VISION_MODEL": visionModel
-            ]
-            _ = try runNode("configure.mjs", environment: environment)
-            deepSeekKey = ""
-            qwenKey = ""
-            loadStoredState()
-            status = "DeepSeek 与 Qwen Key 已保存到 macOS 钥匙串。"
-        } catch {
-            status = "保存密钥失败：\(error.localizedDescription)"
         }
     }
 
@@ -239,10 +215,13 @@ struct SetupView: View {
             ])
             _ = try runNode("install-codex.mjs", arguments: ["install", "--model=\(textModel)"])
             _ = try runNode("install-service.mjs", arguments: ["install"])
+            deepSeekKey = ""
+            qwenKey = ""
+            loadStoredState()
             try? SMAppService.mainApp.register()
             monitor.start()
             await monitor.refresh()
-            status = "安装完成。Codex 已指向本地网关；同一张图片默认只调用一次视觉模型。"
+            status = "连接完成。现在直接打开 Codex 使用即可；同一张图片默认只调用一次视觉模型。"
         } catch {
             status = "安装失败：\(error.localizedDescription)"
         }

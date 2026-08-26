@@ -17,7 +17,7 @@ final class UsageViewModel: ObservableObject {
     private(set) var appConfig = RouterAppConfig(updateManifestURL: nil, updatePublicKeyBase64: nil, updateCheckIntervalSeconds: 900)
 
     var currentVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.3.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.3.1"
     }
 
     var menuTitle: String {
