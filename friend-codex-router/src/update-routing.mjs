@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { providerKeychainService } from "./config.mjs";
 
 export async function updateRouting(options = {}) {
   const supportDir = options.supportDir ?? path.join(os.homedir(), "Library/Application Support/Friend Codex Router");
@@ -15,12 +16,39 @@ export async function updateRouting(options = {}) {
     const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
     config = JSON.parse(await readFile(path.join(projectRoot, "config.example.json"), "utf8"));
   }
-  const codexModel = options.codexModel ?? process.env.FRIEND_ROUTER_CODEX_MODEL;
-  const visionModel = options.visionModel ?? process.env.FRIEND_ROUTER_VISION_MODEL;
-  if (codexModel) config.codexModel = codexModel;
-  if (visionModel) config.visionModel = visionModel;
+  const textProvider = options.textProvider ?? parseProvider(process.env.FRIEND_ROUTER_TEXT_PROVIDER_JSON);
+  const visionProvider = options.visionProvider ?? parseProvider(process.env.FRIEND_ROUTER_VISION_PROVIDER_JSON);
+  if (textProvider) {
+    config.providers ??= {};
+    config.providers[textProvider.id] = providerConfig(textProvider);
+    config.textRoute = { provider: textProvider.id, model: textProvider.model };
+    config.codexModel = "friend-router/text";
+    config.modelRoutes ??= {};
+    config.modelRoutes["friend-router/text"] = { provider: textProvider.id, upstreamModel: textProvider.model };
+  }
+  if (visionProvider) {
+    config.providers ??= {};
+    config.providers[visionProvider.id] = providerConfig(visionProvider);
+    config.visionRoute = { provider: visionProvider.id, model: visionProvider.model };
+  }
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
-  return { configPath, codexModel: config.codexModel, visionModel: config.visionModel };
+  return { configPath, textRoute: config.textRoute, visionRoute: config.visionRoute };
+}
+
+function parseProvider(raw) {
+  if (!raw) return undefined;
+  const value = JSON.parse(raw);
+  for (const key of ["id", "name", "baseUrl", "model"]) if (!value[key]) throw new Error(`Provider configuration is missing ${key}.`);
+  return value;
+}
+
+function providerConfig(value) {
+  return {
+    name: value.name,
+    baseUrl: String(value.baseUrl).replace(/\/+$/, ""),
+    keychainService: providerKeychainService(value.id),
+    keychainAccount: "default"
+  };
 }
 
 async function main() {

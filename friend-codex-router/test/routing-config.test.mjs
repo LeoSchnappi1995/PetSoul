@@ -9,10 +9,11 @@ test("routing can change without re-entering provider keys", async () => {
   const supportDir = await mkdtemp(path.join(os.tmpdir(), "friend-router-routing-"));
   const result = await updateRouting({
     supportDir,
-    codexModel: "Alibaba Bailian/qwen3-coder-plus",
-    visionModel: "qwen-vl-max"
+    textProvider: { id: "bailian", name: "Alibaba Bailian", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen3-coder-plus" },
+    visionProvider: { id: "bailian", name: "Alibaba Bailian", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-vl-max" }
   });
   const config = JSON.parse(await readFile(result.configPath, "utf8"));
-  assert.equal(config.codexModel, "Alibaba Bailian/qwen3-coder-plus");
-  assert.equal(config.visionModel, "qwen-vl-max");
+  assert.equal(config.codexModel, "friend-router/text");
+  assert.deepEqual(config.textRoute, { provider: "bailian", model: "qwen3-coder-plus" });
+  assert.deepEqual(config.visionRoute, { provider: "bailian", model: "qwen-vl-max" });
 });

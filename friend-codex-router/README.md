@@ -26,8 +26,7 @@ No second router is required. The remaining distribution milestone is Developer 
 
 - macOS;
 - Node.js 22 or newer;
-- a DeepSeek API key;
-- a Qwen/DashScope API key.
+- API keys for the selected text and vision providers.
 
 ## Configure secrets
 
@@ -42,23 +41,22 @@ Store the three local secrets in Keychain:
 
 ```bash
 security add-generic-password -U -s com.friend-codex-router.client -a default -w '<local-client-key>'
-security add-generic-password -U -s com.friend-codex-router.deepseek -a default -w '<deepseek-key>'
-security add-generic-password -U -s com.friend-codex-router.qwen -a default -w '<qwen-key>'
+security add-generic-password -U -s com.friend-codex-router.provider.deepseek -a default -w '<deepseek-key>'
+security add-generic-password -U -s com.friend-codex-router.provider.bailian -a default -w '<bailian-key>'
 ```
 
 The local client key is the key Codex uses to call this proxy. It can be a randomly generated value and is separate from provider keys.
 
 ### Where keys live
 
-- The DeepSeek key is stored under `com.friend-codex-router.deepseek`.
-- The Qwen text/vision key is stored under `com.friend-codex-router.qwen`.
+- Provider keys are stored under `com.friend-codex-router.provider.<provider-id>`.
 - The local key used by Codex is generated automatically and stored under `com.friend-codex-router.client`.
 - Secure fields intentionally reopen blank. The Settings window shows only whether each local key is saved.
 
 ### How routing is controlled
 
-- The **默认文字模型** picker changes the model selector written to Codex user config.
-- **应用模型路由** changes text and vision models without asking for keys again.
+- Provider presets fill common API endpoints and model suggestions; every endpoint and model remains editable.
+- **测试并连接 Codex** sends one small text test and one small vision test before saving.
 - New image bytes are intercepted by Friend Codex Router and sent once to the configured Qwen vision model.
 - The cached visual summary replaces raw image blocks before the request reaches the text provider.
 - Text-only work is routed directly to the configured DeepSeek/Qwen endpoint.
@@ -142,10 +140,10 @@ For each release, upload the DMG and generate its manifest:
 
 ```bash
 node scripts/publish-update.mjs manifest \
-  --dmg=dist/Friend-Codex-Router-0.3.0-internal.dmg \
-  --version=0.3.0 \
-  --build=4 \
-  --url=https://downloads.example.com/Friend-Codex-Router-0.3.0.dmg \
+  --dmg=dist/Friend-Codex-Router-0.4.0-internal.dmg \
+  --version=0.4.0 \
+  --build=7 \
+  --url=https://downloads.example.com/Friend-Codex-Router-0.4.0.dmg \
   --private=release-private.pem \
   --out=latest.json
 ```

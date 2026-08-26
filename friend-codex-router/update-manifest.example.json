@@ -1,7 +1,7 @@
 {
-  "version": "0.3.2",
-  "build": 6,
-  "dmgURL": "https://downloads.example.com/Friend-Codex-Router-0.3.2.dmg",
+  "version": "0.4.0",
+  "build": 7,
+  "dmgURL": "https://downloads.example.com/Friend-Codex-Router-0.4.0.dmg",
   "sha256": "replace-with-lowercase-sha256",
   "signature": "replace-with-ed25519-signature-base64",
   "publishedAt": "2026-08-26T00:00:00.000Z"

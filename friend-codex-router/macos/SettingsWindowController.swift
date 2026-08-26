@@ -15,12 +15,12 @@ final class SettingsWindowController {
         }
 
         let rootView = SetupView(monitor: monitor)
-            .frame(minWidth: 680, minHeight: 650)
+            .frame(minWidth: 760, minHeight: 760)
         let hosting = NSHostingController(rootView: rootView)
         let window = NSWindow(contentViewController: hosting)
         window.title = "Friend Codex Router 设置"
         window.styleMask = [.titled, .closable, .miniaturizable]
-        window.setContentSize(NSSize(width: 700, height: 670))
+        window.setContentSize(NSSize(width: 780, height: 800))
         window.center()
         window.isReleasedWhenClosed = false
         let controller = NSWindowController(window: window)

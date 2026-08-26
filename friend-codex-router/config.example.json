@@ -1,22 +1,26 @@
 {
   "listenHost": "127.0.0.1",
   "listenPort": 3566,
-  "codexModel": "DeepSeek/deepseek-chat",
+  "codexModel": "friend-router/text",
   "clientKeychainService": "com.friend-codex-router.client",
   "clientKeychainAccount": "default",
-  "deepseekBaseUrl": "https://api.deepseek.com",
-  "deepseekKeychainService": "com.friend-codex-router.deepseek",
-  "deepseekKeychainAccount": "default",
-  "qwenBaseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-  "qwenKeychainService": "com.friend-codex-router.qwen",
-  "qwenKeychainAccount": "default",
-  "modelRoutes": {
-    "DeepSeek/deepseek-chat": { "provider": "deepseek", "upstreamModel": "deepseek-chat" },
-    "DeepSeek/deepseek-reasoner": { "provider": "deepseek", "upstreamModel": "deepseek-reasoner" },
-    "Alibaba Bailian/qwen3-coder-plus": { "provider": "qwen", "upstreamModel": "qwen3-coder-plus" }
+  "providers": {
+    "deepseek": {
+      "name": "DeepSeek",
+      "baseUrl": "https://api.deepseek.com",
+      "keychainService": "com.friend-codex-router.provider.deepseek"
+    },
+    "bailian": {
+      "name": "Alibaba Bailian",
+      "baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "keychainService": "com.friend-codex-router.provider.bailian"
+    }
   },
-  "visionBaseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-  "visionModel": "qwen-vl-max",
+  "textRoute": { "provider": "deepseek", "model": "deepseek-chat" },
+  "visionRoute": { "provider": "bailian", "model": "qwen-vl-max" },
+  "modelRoutes": {
+    "friend-router/text": { "provider": "deepseek", "upstreamModel": "deepseek-chat" }
+  },
   "cacheFile": "~/Library/Application Support/Friend Codex Router/vision-cache.json",
   "usageFile": "~/Library/Application Support/Friend Codex Router/usage.json",
   "usageWindow": "week",

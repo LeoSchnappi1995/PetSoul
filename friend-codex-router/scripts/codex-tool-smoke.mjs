@@ -35,15 +35,18 @@ const { server: router } = await createRouterServer({
   config: {
     listenHost: "127.0.0.1", listenPort: 0,
     codexModel: "DeepSeek/deepseek-chat",
-    deepseekBaseUrl: `http://127.0.0.1:${providerPort}`,
-    qwenBaseUrl: `http://127.0.0.1:${providerPort}`,
+    providers: {
+      deepseek: { name: "DeepSeek", baseUrl: `http://127.0.0.1:${providerPort}` },
+      bailian: { name: "Bailian", baseUrl: `http://127.0.0.1:${providerPort}` }
+    },
+    textRoute: { provider: "deepseek", model: "deepseek-chat" },
+    visionRoute: { provider: "bailian", model: "qwen-vl-test" },
     modelRoutes: { "DeepSeek/deepseek-chat": { provider: "deepseek", upstreamModel: "deepseek-chat" } },
-    visionBaseUrl: `http://127.0.0.1:${providerPort}`, visionModel: "qwen-vl-test",
     cacheFile: ":memory:", usageFile: ":memory:", usageWindow: "week", modelPricing: {},
     visionPromptVersion: "test-v1", maxAutoVisionPerRequest: 1,
     maxRequestBytes: 30 * 1024 * 1024, maxImageBytes: 1024 * 1024, visionTimeoutMs: 5000
   },
-  secrets: { clientKey: "local-key", deepseekKey: "deepseek-key", qwenKey: "qwen-key", visionKey: "qwen-key" },
+  secrets: { clientKey: "local-key", providerKeys: { deepseek: "deepseek-key", bailian: "qwen-key" }, visionKey: "qwen-key" },
   cache: new VisionCache(":memory:")
 });
 await listen(router);

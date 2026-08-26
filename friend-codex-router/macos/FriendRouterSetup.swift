@@ -71,244 +71,211 @@ struct UsageMenuView: View {
 
 struct SetupView: View {
     @ObservedObject var monitor: UsageViewModel
-    @State private var deepSeekKey = ""
-    @State private var qwenKey = ""
-    @State private var textModel = "DeepSeek/deepseek-chat"
-    @State private var visionModel = "qwen-vl-max"
-    @State private var status = "填写 DeepSeek 与 Qwen API Key，然后保存并连接 Codex。"
+    @State private var textProviderId = "deepseek"
+    @State private var textEndpoint = ProviderPreset.find("deepseek").baseURL
+    @State private var textModel = ProviderPreset.find("deepseek").textModels.first!
+    @State private var textKey = ""
+    @State private var visionProviderId = "bailian"
+    @State private var visionEndpoint = ProviderPreset.find("bailian").baseURL
+    @State private var visionModel = ProviderPreset.find("bailian").visionModels.first!
+    @State private var visionKey = ""
+    @State private var statusKind: StatusKind = .neutral
+    @State private var statusTitle = "尚未连接"
+    @State private var statusDetail = "选择服务商并填写 API Key。系统会先测试连接，成功后再接入 Codex。"
     @State private var working = false
-    @State private var localClientKeyStored = false
-    @State private var deepSeekKeyStored = false
-    @State private var qwenKeyStored = false
-
-    private let textModels = [
-        "DeepSeek/deepseek-chat",
-        "DeepSeek/deepseek-reasoner",
-        "Alibaba Bailian/qwen3-coder-plus"
-    ]
+    @State private var connected = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Friend Codex Router")
-                    .font(.system(size: 28, weight: .bold))
-                Text("文字任务走 DeepSeek/Qwen；新图片只理解一次，后续复用摘要。")
-                    .foregroundStyle(.secondary)
-            }
-
-            GroupBox("1. 服务商密钥") {
-                VStack(alignment: .leading, spacing: 12) {
-                    SecureField("DeepSeek API Key", text: $deepSeekKey)
-                    SecureField("Qwen / DashScope API Key", text: $qwenKey)
-                    Text("本地状态：Codex 本地 Key \(storedText(localClientKeyStored)) · DeepSeek Key \(storedText(deepSeekKeyStored)) · Qwen Key \(storedText(qwenKeyStored))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Button(deepSeekKeyStored && qwenKeyStored ? "重新连接 Codex" : "保存 Key 并连接 Codex") { Task { await install() } }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(working || (!deepSeekKeyStored && deepSeekKey.isEmpty) || (!qwenKeyStored && qwenKey.isEmpty))
-                    Text("首次填写两个 Key 后只需点击一次。本 App 会保存 Key、启动本地网关并自动连接 Codex。安全原因不会回填明文。")
-                        .font(.caption)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Friend Codex Router").font(.system(size: 28, weight: .bold))
+                    Text("选择常用服务商，测试成功后自动连接 Codex。新图片只理解一次。")
                         .foregroundStyle(.secondary)
                 }
-                .padding(8)
-            }
 
-            GroupBox("2. 模型路由（可选）") {
-                VStack(alignment: .leading, spacing: 12) {
-                    Picker("默认文字模型", selection: $textModel) {
-                        ForEach(textModels, id: \.self) { Text($0).tag($0) }
-                    }
-                    TextField("图片理解模型", text: $visionModel)
-                    HStack {
-                        Button("应用模型路由") { Task { await applyRouting() } }
-                            .disabled(working)
-                        Text("文字 → \(textModel)；新图片 → \(visionModel) 一次；后续复用摘要。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Text("切换文字模型不需要重新输入 Key。图片理解与图片生成完全分开；接收图片不会触发生图。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                ConnectionStatusBanner(kind: statusKind, title: statusTitle, detail: statusDetail, working: working)
+
+                providerGroup(title: "1. 文字模型", providerId: $textProviderId, endpoint: $textEndpoint, model: $textModel, key: $textKey, vision: false)
+                providerGroup(title: "2. 图片理解模型", providerId: $visionProviderId, endpoint: $visionEndpoint, model: $visionModel, key: $visionKey, vision: true)
+
+                GroupBox("3. 测试并连接") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Button(connected ? "重新测试并连接 Codex" : "测试并连接 Codex") { Task { await connect() } }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
+                            .disabled(working || !canConnect)
+                        Text("会分别发送一次极小的文字和图片测试请求。两项都成功后才保存 Key、启动网关并修改 Codex 配置。")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Divider()
+                        HStack {
+                            Button("检查运行状态") { Task { await checkHealth() } }.disabled(working)
+                            Button("恢复原 Codex 配置") { Task { await restore() } }.disabled(working)
+                        }
+                    }.padding(8)
                 }
-                .padding(8)
-            }
 
-            GroupBox("3. 状态与恢复") {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Button("恢复原 Codex 配置") { Task { await restore() } }
-                            .disabled(working)
-                        Button("检查运行状态") { Task { await checkHealth() } }
-                            .disabled(working)
-                    }
-                    Text(status)
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(8)
-            }
-
-            Spacer()
-            Text("内测版：请先把本 App 拖到 Applications 再安装。无需安装其他 Router；本 App 直接连接 DeepSeek 与 Qwen。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                Text("Key 保存于 macOS 钥匙串，不会显示或回填。Endpoint 与模型可以随时修改；自定义服务必须兼容 OpenAI Chat Completions。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }.padding(24)
         }
-        .padding(24)
-        .onAppear {
-            loadStoredState()
-            monitor.start()
+        .onAppear { loadStoredConfiguration(); monitor.start() }
+        .onChange(of: textProviderId) { value in applyPreset(value, vision: false) }
+        .onChange(of: visionProviderId) { value in applyPreset(value, vision: true) }
+    }
+
+    @ViewBuilder
+    private func providerGroup(title: String, providerId: Binding<String>, endpoint: Binding<String>, model: Binding<String>, key: Binding<String>, vision: Bool) -> some View {
+        let preset = ProviderPreset.find(providerId.wrappedValue)
+        GroupBox(title) {
+            VStack(alignment: .leading, spacing: 11) {
+                Picker("服务商", selection: providerId) {
+                    ForEach(ProviderPreset.all) { Text($0.name).tag($0.id) }
+                }
+                TextField("API Endpoint", text: endpoint)
+                HStack {
+                    TextField(vision ? "图片理解模型 ID" : "文字模型 ID", text: model)
+                    if !(vision ? preset.visionModels : preset.textModels).isEmpty {
+                        Menu("常用模型") {
+                            ForEach(vision ? preset.visionModels : preset.textModels, id: \.self) { item in
+                                Button(item) { model.wrappedValue = item }
+                            }
+                        }
+                    }
+                }
+                SecureField(vision && providerId.wrappedValue == textProviderId ? "API Key（留空则复用文字模型 Key）" : "API Key", text: key)
+                Text("Endpoint 已预填但可编辑。保存状态：\(keyStatus(providerId.wrappedValue))")
+                    .font(.caption).foregroundStyle(.secondary)
+            }.padding(8)
         }
     }
 
-    @MainActor
-    private func applyRouting() async {
-        working = true
-        defer { working = false }
-        do {
-            let environment = [
-                "FRIEND_ROUTER_CODEX_MODEL": textModel,
-                "FRIEND_ROUTER_VISION_MODEL": visionModel
-            ]
-            _ = try runNode("update-routing.mjs", environment: environment)
-            _ = try runNode("install-codex.mjs", arguments: ["install", "--model=\(textModel)"])
-            if deepSeekKeyStored && qwenKeyStored {
-                _ = try runNode("install-service.mjs", arguments: ["install"])
-            }
-            status = "路由已应用：文字任务走 \(textModel)，新图片首次走 \(visionModel)。请在 Codex 中新开任务使默认文字模型立即生效。"
-        } catch {
-            status = "应用路由失败：\(error.localizedDescription)"
-        }
+    private var canConnect: Bool {
+        !textEndpoint.isEmpty && !textModel.isEmpty && !visionEndpoint.isEmpty && !visionModel.isEmpty
+        && (effectiveKey(providerId: textProviderId, entered: textKey) != nil)
+        && (effectiveVisionKey != nil)
+    }
+
+    private var effectiveVisionKey: String? {
+        if !visionKey.isEmpty { return visionKey }
+        if visionProviderId == textProviderId, let value = effectiveKey(providerId: textProviderId, entered: textKey) { return value }
+        return readKeychain(providerId: visionProviderId)
     }
 
     @MainActor
-    private func install() async {
+    private func connect() async {
         guard !Bundle.main.bundlePath.hasPrefix("/Volumes/") else {
-            status = "请先将 App 拖入 Applications，再执行安装；否则后台服务会引用 DMG 临时路径。"
+            setStatus(.error, "请先拖入 Applications", "从 DMG 直接运行会导致后台服务引用临时路径。")
+            return
+        }
+        guard let resolvedTextKey = effectiveKey(providerId: textProviderId, entered: textKey), let resolvedVisionKey = effectiveVisionKey else {
+            setStatus(.error, "缺少 API Key", "请填写文字与图片模型所需的 Key。")
             return
         }
         working = true
+        setStatus(.working, "正在测试连接", "先测试 \(textProvider.name) / \(textModel)，再测试 \(visionProvider.name) / \(visionModel)。")
         defer { working = false }
         do {
-            if !deepSeekKey.isEmpty || !qwenKey.isEmpty {
-                guard !deepSeekKey.isEmpty && !qwenKey.isEmpty else {
-                    throw SetupError("首次保存需要同时填写 DeepSeek 与 Qwen/DashScope Key。")
-                }
-                let environment = [
-                    "FRIEND_ROUTER_DEEPSEEK_KEY": deepSeekKey,
-                    "FRIEND_ROUTER_QWEN_KEY": qwenKey,
-                    "FRIEND_ROUTER_CODEX_MODEL": textModel,
-                    "FRIEND_ROUTER_VISION_MODEL": visionModel
-                ]
-                _ = try runNode("configure.mjs", environment: environment)
-                loadStoredState()
-            }
-            guard deepSeekKeyStored || keychainHas(service: "com.friend-codex-router.deepseek") else {
-                throw SetupError("缺少 DeepSeek Key，请先在上方保存 API Key。")
-            }
-            guard qwenKeyStored || keychainHas(service: "com.friend-codex-router.qwen") else {
-                throw SetupError("缺少 Qwen Key，请先在上方保存 API Key。")
-            }
-            _ = try runNode("update-routing.mjs", environment: [
-                "FRIEND_ROUTER_CODEX_MODEL": textModel,
-                "FRIEND_ROUTER_VISION_MODEL": visionModel
+            let textJSON = providerJSON(textProvider, endpoint: textEndpoint, model: textModel)
+            let visionJSON = providerJSON(visionProvider, endpoint: visionEndpoint, model: visionModel)
+            _ = try runNode("provider-check.mjs", environment: ["FRIEND_ROUTER_PROVIDER_JSON": textJSON, "FRIEND_ROUTER_PROVIDER_KEY": resolvedTextKey, "FRIEND_ROUTER_PROVIDER_KIND": "text"])
+            _ = try runNode("provider-check.mjs", environment: ["FRIEND_ROUTER_PROVIDER_JSON": visionJSON, "FRIEND_ROUTER_PROVIDER_KEY": resolvedVisionKey, "FRIEND_ROUTER_PROVIDER_KIND": "vision"])
+            _ = try runNode("configure.mjs", environment: [
+                "FRIEND_ROUTER_TEXT_PROVIDER_JSON": textJSON,
+                "FRIEND_ROUTER_VISION_PROVIDER_JSON": visionJSON,
+                "FRIEND_ROUTER_TEXT_KEY": resolvedTextKey,
+                "FRIEND_ROUTER_VISION_KEY": resolvedVisionKey
             ])
-            _ = try runNode("install-codex.mjs", arguments: ["install", "--model=\(textModel)"])
+            _ = try runNode("install-codex.mjs", arguments: ["install", "--model=friend-router/text"])
             _ = try runNode("install-service.mjs", arguments: ["install"])
-            deepSeekKey = ""
-            qwenKey = ""
-            loadStoredState()
             try? SMAppService.mainApp.register()
-            monitor.start()
-            await monitor.refresh()
-            status = "连接完成。现在直接打开 Codex 使用即可；同一张图片默认只调用一次视觉模型。"
+            textKey = ""; visionKey = ""; connected = true
+            monitor.start(); await monitor.refresh()
+            setStatus(.success, "连接成功", "文字：\(textProvider.name) / \(textModel)　图片：\(visionProvider.name) / \(visionModel)。现在直接打开 Codex 即可。")
         } catch {
-            status = "安装失败：\(error.localizedDescription)"
-        }
-    }
-
-    @MainActor
-    private func restore() async {
-        working = true
-        defer { working = false }
-        do {
-            _ = try? runNode("install-service.mjs", arguments: ["uninstall"])
-            _ = try runNode("install-codex.mjs", arguments: ["restore"])
-            try? await SMAppService.mainApp.unregister()
-            status = "已停止本地网关并恢复安装前的 Codex 配置。"
-        } catch {
-            status = "恢复失败：\(error.localizedDescription)"
+            setStatus(.error, "连接失败", error.localizedDescription)
         }
     }
 
     @MainActor
     private func checkHealth() async {
-        working = true
-        defer { working = false }
+        working = true; defer { working = false }; await monitor.refresh()
+        if monitor.reachable {
+            setStatus(.success, "网关运行正常", "本周 \(monitor.snapshot?.total.requests ?? 0) 次调用，\(monitor.snapshot?.total.totalTokens.compactCount ?? "0") Tokens。")
+        } else { setStatus(.error, "网关未运行", monitor.lastError ?? "请重新测试并连接。") }
+    }
+
+    @MainActor
+    private func restore() async {
+        working = true; defer { working = false }
         do {
-            await monitor.refresh()
-            if monitor.reachable {
-                status = "网关正常。当前自然周：\(monitor.snapshot?.total.requests ?? 0) 次调用，\(monitor.snapshot?.total.totalTokens.compactCount ?? "0") Tokens。"
-            } else {
-                throw SetupError(monitor.lastError ?? "本地网关未响应。")
-            }
-        } catch {
-            status = "网关尚未运行：\(error.localizedDescription)"
-        }
+            _ = try? runNode("install-service.mjs", arguments: ["uninstall"])
+            _ = try runNode("install-codex.mjs", arguments: ["restore"])
+            try? await SMAppService.mainApp.unregister(); connected = false
+            setStatus(.neutral, "已恢复", "已停止本地网关并恢复安装前的 Codex 配置。")
+        } catch { setStatus(.error, "恢复失败", error.localizedDescription) }
     }
 
-    private func loadStoredState() {
-        localClientKeyStored = keychainHas(service: "com.friend-codex-router.client")
-        deepSeekKeyStored = keychainHas(service: "com.friend-codex-router.deepseek")
-        qwenKeyStored = keychainHas(service: "com.friend-codex-router.qwen")
-        let configURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/Friend Codex Router/config.json")
-        if let data = try? Data(contentsOf: configURL),
-           let routing = try? JSONDecoder().decode(StoredRouting.self, from: data) {
-            textModel = routing.codexModel ?? textModel
-            visionModel = routing.visionModel ?? visionModel
-        }
+    private var textProvider: ProviderPreset { ProviderPreset.find(textProviderId) }
+    private var visionProvider: ProviderPreset { ProviderPreset.find(visionProviderId) }
+    private func applyPreset(_ id: String, vision: Bool) {
+        let preset = ProviderPreset.find(id)
+        if vision { visionEndpoint = preset.baseURL; visionModel = preset.visionModels.first ?? preset.textModels.first ?? "" }
+        else { textEndpoint = preset.baseURL; textModel = preset.textModels.first ?? "" }
     }
-
-    private func keychainHas(service: String) -> Bool {
-        let process = Process()
+    private func providerJSON(_ preset: ProviderPreset, endpoint: String, model: String) -> String {
+        let value = ProviderPayload(id: preset.id, name: preset.name, baseUrl: endpoint, model: model)
+        return String(data: try! JSONEncoder().encode(value), encoding: .utf8)!
+    }
+    private func keyStatus(_ id: String) -> String { readKeychain(providerId: id) == nil ? "未保存" : "已保存" }
+    private func effectiveKey(providerId: String, entered: String) -> String? { entered.isEmpty ? readKeychain(providerId: providerId) : entered }
+    private func readKeychain(providerId: String) -> String? {
+        let process = Process(); let pipe = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        process.arguments = ["find-generic-password", "-s", service, "-a", "default"]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-            process.waitUntilExit()
-            return process.terminationStatus == 0
-        } catch {
-            return false
-        }
+        process.arguments = ["find-generic-password", "-w", "-s", "com.friend-codex-router.provider.\(providerId)", "-a", "default"]
+        process.standardOutput = pipe; process.standardError = FileHandle.nullDevice
+        do { try process.run(); process.waitUntilExit(); guard process.terminationStatus == 0 else { return nil }; return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) } catch { return nil }
     }
-
-    private func storedText(_ stored: Bool) -> String { stored ? "已保存" : "未保存" }
-
+    private func loadStoredConfiguration() {
+        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Friend Codex Router/config.json")
+        guard let data = try? Data(contentsOf: url), let stored = try? JSONDecoder().decode(StoredProviderConfiguration.self, from: data) else { return }
+        if let route = stored.textRoute, let provider = stored.providers?[route.provider] { textProviderId = route.provider; textEndpoint = provider.baseUrl; textModel = route.model }
+        if let route = stored.visionRoute, let provider = stored.providers?[route.provider] { visionProviderId = route.provider; visionEndpoint = provider.baseUrl; visionModel = route.model }
+        connected = FileManager.default.fileExists(atPath: url.path)
+        if connected { setStatus(.success, "已保存配置", "点击“重新测试并连接 Codex”可以验证当前 Key 与模型仍然可用。") }
+    }
+    private func setStatus(_ kind: StatusKind, _ title: String, _ detail: String) { statusKind = kind; statusTitle = title; statusDetail = detail }
     private func runNode(_ script: String, arguments: [String] = [], environment: [String: String] = [:]) throws -> String {
         guard let resources = Bundle.main.resourceURL else { throw SetupError("App resources are missing.") }
-        let node = resources.appendingPathComponent("node/bin/node")
-        let scriptURL = resources.appendingPathComponent("app/src/\(script)")
-        let process = Process()
-        process.executableURL = node
-        process.arguments = [scriptURL.path] + arguments
+        let process = Process(); let pipe = Pipe()
+        process.executableURL = resources.appendingPathComponent("node/bin/node")
+        process.arguments = [resources.appendingPathComponent("app/src/\(script)").path] + arguments
         process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        try process.run()
-        process.waitUntilExit()
+        process.standardOutput = pipe; process.standardError = pipe
+        try process.run(); process.waitUntilExit()
         let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         guard process.terminationStatus == 0 else { throw SetupError(output.trimmingCharacters(in: .whitespacesAndNewlines)) }
         return output
     }
 }
 
-private struct StoredRouting: Decodable {
-    let codexModel: String?
-    let visionModel: String?
+private struct ProviderPayload: Encodable { let id: String; let name: String; let baseUrl: String; let model: String }
+private struct StoredProviderConfiguration: Decodable { let providers: [String: StoredProvider]?; let textRoute: StoredRoute?; let visionRoute: StoredRoute? }
+private struct StoredProvider: Decodable { let name: String; let baseUrl: String }
+private struct StoredRoute: Decodable { let provider: String; let model: String }
+
+enum StatusKind { case neutral, working, success, error }
+struct ConnectionStatusBanner: View {
+    let kind: StatusKind; let title: String; let detail: String; let working: Bool
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            if working { ProgressView().controlSize(.small) } else { Image(systemName: icon).foregroundStyle(color).font(.title3) }
+            VStack(alignment: .leading, spacing: 4) { Text(title).font(.headline); Text(detail).font(.subheadline).foregroundStyle(.secondary).textSelection(.enabled) }
+            Spacer()
+        }.padding(14).background(color.opacity(0.11)).overlay(RoundedRectangle(cornerRadius: 12).stroke(color.opacity(0.35))).clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+    private var icon: String { switch kind { case .success: return "checkmark.circle.fill"; case .error: return "xmark.octagon.fill"; case .working: return "arrow.triangle.2.circlepath"; case .neutral: return "info.circle.fill" } }
+    private var color: Color { switch kind { case .success: return .green; case .error: return .red; case .working: return .blue; case .neutral: return .blue } }
 }
 
 struct SetupError: LocalizedError {

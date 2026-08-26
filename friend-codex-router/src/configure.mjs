@@ -4,6 +4,7 @@ import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { providerKeychainService } from "./config.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -18,22 +19,65 @@ export async function configure(options = {}) {
     await copyFile(path.join(projectRoot, "config.example.json"), configPath);
   }
   const config = JSON.parse(await readFile(configPath, "utf8"));
-  if (options.codexModel ?? process.env.FRIEND_ROUTER_CODEX_MODEL) {
-    config.codexModel = options.codexModel ?? process.env.FRIEND_ROUTER_CODEX_MODEL;
-  }
-  if (options.visionModel ?? process.env.FRIEND_ROUTER_VISION_MODEL) {
-    config.visionModel = options.visionModel ?? process.env.FRIEND_ROUTER_VISION_MODEL;
-  }
-  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  const textProvider = options.textProvider ?? parseProvider(process.env.FRIEND_ROUTER_TEXT_PROVIDER_JSON, {
+    id: "deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com", model: "deepseek-chat"
+  });
+  const visionProvider = options.visionProvider ?? parseProvider(process.env.FRIEND_ROUTER_VISION_PROVIDER_JSON, {
+    id: "bailian", name: "Alibaba Bailian", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-vl-max"
+  });
   const clientKey = options.clientKey ?? process.env.FRIEND_ROUTER_CLIENT_KEY ?? `fcr_${randomBytes(24).toString("base64url")}`;
-  const deepseekKey = options.deepseekKey ?? process.env.FRIEND_ROUTER_DEEPSEEK_KEY;
-  const qwenKey = options.qwenKey ?? process.env.FRIEND_ROUTER_QWEN_KEY;
-  if (!deepseekKey) throw new Error("Set FRIEND_ROUTER_DEEPSEEK_KEY to the DeepSeek API key.");
-  if (!qwenKey) throw new Error("Set FRIEND_ROUTER_QWEN_KEY to the Qwen/DashScope API key.");
+  const textKey = options.textKey ?? process.env.FRIEND_ROUTER_TEXT_KEY ?? process.env.FRIEND_ROUTER_DEEPSEEK_KEY;
+  const visionKey = options.visionKey ?? process.env.FRIEND_ROUTER_VISION_KEY ?? process.env.FRIEND_ROUTER_QWEN_KEY
+    ?? (visionProvider.id === textProvider.id ? textKey : undefined);
+  if (!textKey) throw new Error(`API key for text provider ${textProvider.name} is missing.`);
+  if (!visionKey) throw new Error(`API key for vision provider ${visionProvider.name} is missing.`);
+
+  config.providers = {
+    ...(config.providers ?? {}),
+    [textProvider.id]: providerConfig(textProvider),
+    [visionProvider.id]: providerConfig(visionProvider)
+  };
+  config.textRoute = { provider: textProvider.id, model: textProvider.model };
+  config.visionRoute = { provider: visionProvider.id, model: visionProvider.model };
+  config.codexModel = "friend-router/text";
+  config.modelRoutes = {
+    ...(config.modelRoutes ?? {}),
+    "friend-router/text": { provider: textProvider.id, upstreamModel: textProvider.model }
+  };
+  delete config.deepseekBaseUrl;
+  delete config.qwenBaseUrl;
+  delete config.visionBaseUrl;
+  delete config.visionModel;
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
   writeKeychain("com.friend-codex-router.client", "default", clientKey);
-  writeKeychain("com.friend-codex-router.deepseek", "default", deepseekKey);
-  writeKeychain("com.friend-codex-router.qwen", "default", qwenKey);
-  return { configPath, clientKeyStored: true, deepseekKeyStored: true, qwenKeyStored: true };
+  writeKeychain(providerKeychainService(textProvider.id), "default", textKey);
+  writeKeychain(providerKeychainService(visionProvider.id), "default", visionKey);
+  return {
+    configPath,
+    clientKeyStored: true,
+    textProvider: { id: textProvider.id, name: textProvider.name, model: textProvider.model },
+    visionProvider: { id: visionProvider.id, name: visionProvider.name, model: visionProvider.model }
+  };
+}
+
+function parseProvider(raw, fallback) {
+  if (!raw) return fallback;
+  const value = JSON.parse(raw);
+  for (const key of ["id", "name", "baseUrl", "model"]) {
+    if (!value[key]) throw new Error(`Provider configuration is missing ${key}.`);
+  }
+  const url = new URL(value.baseUrl);
+  if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("Provider URL must use HTTP or HTTPS.");
+  return value;
+}
+
+function providerConfig(value) {
+  return {
+    name: value.name,
+    baseUrl: String(value.baseUrl).replace(/\/+$/, ""),
+    keychainService: providerKeychainService(value.id),
+    keychainAccount: "default"
+  };
 }
 
 function writeKeychain(service, account, value) {

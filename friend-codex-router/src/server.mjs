@@ -17,6 +17,8 @@ export async function createRouterServer(options = {}) {
   const fetchFn = options.fetchFn ?? fetch;
   const cache = options.cache ?? new VisionCache(config.cacheFile);
   const usageStore = options.usageStore ?? new UsageStore(config.usageFile ?? ":memory:", { pricing: config.modelPricing ?? {} });
+  const visionProvider = config.providers[config.visionRoute.provider];
+  if (!visionProvider) throw new Error(`Vision provider ${config.visionRoute.provider} is not configured.`);
   await cache.load();
   await usageStore.load();
   const metrics = {
@@ -67,15 +69,15 @@ export async function createRouterServer(options = {}) {
           try {
             const result = await analyzeVision({
               apiKey: secrets.visionKey,
-              baseUrl: config.visionBaseUrl,
-              model: config.visionModel,
+              baseUrl: visionProvider.baseUrl,
+              model: config.visionRoute.model,
               source,
               prompt,
               timeoutMs: config.visionTimeoutMs,
               fetchFn
             });
             await usageStore.record({
-              model: result.model,
+                model: `${visionProvider.name}/${result.model}`,
               usage: result.usage,
               cost: result.cost,
               kind: "vision",
@@ -83,13 +85,13 @@ export async function createRouterServer(options = {}) {
             });
             return result;
           } catch (error) {
-            await usageStore.record({ model: config.visionModel, kind: "vision", ok: false });
+            await usageStore.record({ model: `${visionProvider.name}/${config.visionRoute.model}`, kind: "vision", ok: false });
             process.stderr.write(`${JSON.stringify({
               time: new Date().toISOString(),
               level: "error",
               event: "vision_request_failed",
               sourceKind: source?.kind ?? "unknown",
-              model: config.visionModel,
+              model: config.visionRoute.model,
               error: formatError(error)
             })}\n`);
             throw error;
@@ -148,10 +150,10 @@ function health(config) {
   return {
     ok: true,
     service: "friend-codex-router",
-    version: "0.3.2",
+    version: "0.4.0",
     listen: `${config.listenHost}:${config.listenPort}`,
     providers: ["deepseek", "qwen"],
-    visionModel: config.visionModel,
+    visionModel: `${config.providers[config.visionRoute.provider].name}/${config.visionRoute.model}`,
     visionPolicy: "new-image-once-with-cache"
   };
 }

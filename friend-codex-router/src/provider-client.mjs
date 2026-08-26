@@ -4,25 +4,18 @@ export function resolveModelRoute(config, secrets, requestedModel) {
     : config.codexModel;
   const route = config.modelRoutes[selector];
   if (!route) throw new Error(`No model route is configured for ${requestedModel ?? selector}.`);
-  if (route.provider === "deepseek") {
-    return {
-      selector,
-      provider: "deepseek",
-      upstreamModel: route.upstreamModel,
-      baseUrl: config.deepseekBaseUrl,
-      apiKey: secrets.deepseekKey
-    };
-  }
-  if (route.provider === "qwen") {
-    return {
-      selector,
-      provider: "qwen",
-      upstreamModel: route.upstreamModel,
-      baseUrl: config.qwenBaseUrl,
-      apiKey: secrets.qwenKey
-    };
-  }
-  throw new Error(`Unsupported provider ${route.provider}.`);
+  const provider = config.providers[route.provider];
+  if (!provider) throw new Error(`Provider ${route.provider} is not configured.`);
+  const apiKey = secrets.providerKeys[route.provider];
+  if (!apiKey) throw new Error(`API key for provider ${provider.name} is missing.`);
+  return {
+    selector,
+    provider: route.provider,
+    providerName: provider.name,
+    upstreamModel: route.upstreamModel,
+    baseUrl: provider.baseUrl,
+    apiKey
+  };
 }
 
 export async function callChatCompletions(route, payload, options = {}) {

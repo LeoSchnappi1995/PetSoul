@@ -63,11 +63,13 @@ async function createTestServer(fetchFn) {
       listenHost: "127.0.0.1",
       listenPort: 0,
       codexModel: "DeepSeek/deepseek-chat",
-      deepseekBaseUrl: "https://deepseek.example",
-      qwenBaseUrl: "https://qwen.example/v1",
+      providers: {
+        deepseek: { name: "DeepSeek", baseUrl: "https://deepseek.example" },
+        bailian: { name: "Bailian", baseUrl: "https://vision.example/v1" }
+      },
+      textRoute: { provider: "deepseek", model: "deepseek-chat" },
+      visionRoute: { provider: "bailian", model: "qwen-vl-test" },
       modelRoutes: { "DeepSeek/deepseek-chat": { provider: "deepseek", upstreamModel: "deepseek-chat" } },
-      visionBaseUrl: "https://vision.example/v1",
-      visionModel: "qwen-vl-test",
       cacheFile: ":memory:",
       usageFile: ":memory:",
       visionPromptVersion: "test-v1",
@@ -77,7 +79,7 @@ async function createTestServer(fetchFn) {
       visionTimeoutMs: 5000,
       modelPricing: {}
     },
-    secrets: { clientKey: "local-key", deepseekKey: "deepseek-key", qwenKey: "qwen-key", visionKey: "qwen-key" },
+    secrets: { clientKey: "local-key", providerKeys: { deepseek: "deepseek-key", bailian: "qwen-key" }, visionKey: "qwen-key" },
     cache: new VisionCache(":memory:"),
     fetchFn
   });

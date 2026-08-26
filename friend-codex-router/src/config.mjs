@@ -16,21 +16,25 @@ export async function loadConfig(configPath = process.env.FRIEND_ROUTER_CONFIG ?
   const resolvedPath = path.resolve(expandHome(configPath));
   const raw = await readFile(resolvedPath, "utf8");
   const parsed = JSON.parse(raw);
+  const providers = normalizeProviders(parsed);
+  const textRoute = parsed.textRoute ?? legacyTextRoute(parsed);
+  const visionRoute = parsed.visionRoute ?? legacyVisionRoute(parsed);
+  const modelRoutes = {
+    ...(parsed.modelRoutes ?? {}),
+    "friend-router/text": { provider: textRoute.provider, upstreamModel: textRoute.model }
+  };
   const config = {
     listenHost: parsed.listenHost ?? "127.0.0.1",
     listenPort: integer(parsed.listenPort, 3566),
-    codexModel: parsed.codexModel ?? "DeepSeek/deepseek-chat",
+    codexModel: "friend-router/text",
     clientKeychainService: parsed.clientKeychainService ?? "com.friend-codex-router.client",
     clientKeychainAccount: parsed.clientKeychainAccount ?? "default",
-    deepseekBaseUrl: stripTrailingSlash(parsed.deepseekBaseUrl ?? "https://api.deepseek.com"),
-    deepseekKeychainService: parsed.deepseekKeychainService ?? "com.friend-codex-router.deepseek",
-    deepseekKeychainAccount: parsed.deepseekKeychainAccount ?? "default",
-    qwenBaseUrl: stripTrailingSlash(parsed.qwenBaseUrl ?? "https://dashscope.aliyuncs.com/compatible-mode/v1"),
-    qwenKeychainService: parsed.qwenKeychainService ?? "com.friend-codex-router.qwen",
-    qwenKeychainAccount: parsed.qwenKeychainAccount ?? "default",
-    modelRoutes: parsed.modelRoutes ?? defaultModelRoutes(),
-    visionBaseUrl: stripTrailingSlash(parsed.visionBaseUrl ?? "https://dashscope.aliyuncs.com/compatible-mode/v1"),
-    visionModel: parsed.visionModel ?? "qwen-vl-max",
+    providers,
+    textRoute,
+    visionRoute,
+    modelRoutes,
+    visionBaseUrl: providers[visionRoute.provider].baseUrl,
+    visionModel: visionRoute.model,
     cacheFile: path.resolve(expandHome(parsed.cacheFile ?? "~/Library/Application Support/Friend Codex Router/vision-cache.json")),
     usageFile: path.resolve(expandHome(parsed.usageFile ?? "~/Library/Application Support/Friend Codex Router/usage.json")),
     usageWindow: parsed.usageWindow ?? "week",
@@ -50,24 +54,25 @@ export async function loadConfig(configPath = process.env.FRIEND_ROUTER_CONFIG ?
 }
 
 export function loadSecrets(config) {
+  const requiredProviderIds = new Set([config.textRoute.provider, config.visionRoute.provider]);
+  const providerKeys = {};
+  for (const providerId of requiredProviderIds) {
+    const provider = config.providers[providerId];
+    const envName = `FRIEND_ROUTER_PROVIDER_${providerId.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_KEY`;
+    providerKeys[providerId] = process.env[envName]
+      ?? legacyProviderEnv(providerId)
+      ?? readProviderKey(providerId, provider);
+  }
   return {
     clientKey: process.env.FRIEND_ROUTER_CLIENT_KEY
       ?? readKeychain(config.clientKeychainService, config.clientKeychainAccount),
-    deepseekKey: process.env.FRIEND_ROUTER_DEEPSEEK_KEY
-      ?? readKeychain(config.deepseekKeychainService, config.deepseekKeychainAccount),
-    qwenKey: process.env.FRIEND_ROUTER_QWEN_KEY
-      ?? readKeychain(config.qwenKeychainService, config.qwenKeychainAccount),
-    visionKey: process.env.FRIEND_ROUTER_QWEN_KEY
-      ?? readKeychain(config.qwenKeychainService, config.qwenKeychainAccount)
+    providerKeys,
+    visionKey: providerKeys[config.visionRoute.provider]
   };
 }
 
-function defaultModelRoutes() {
-  return {
-    "DeepSeek/deepseek-chat": { provider: "deepseek", upstreamModel: "deepseek-chat" },
-    "DeepSeek/deepseek-reasoner": { provider: "deepseek", upstreamModel: "deepseek-reasoner" },
-    "Alibaba Bailian/qwen3-coder-plus": { provider: "qwen", upstreamModel: "qwen3-coder-plus" }
-  };
+export function providerKeychainService(providerId) {
+  return `com.friend-codex-router.provider.${String(providerId).replace(/[^A-Za-z0-9._-]/g, "_")}`;
 }
 
 export function readKeychain(service, account) {
@@ -89,14 +94,10 @@ function validateConfig(config) {
   if (!Number.isInteger(config.listenPort) || config.listenPort < 1 || config.listenPort > 65535) {
     throw new Error("listenPort must be a valid TCP port.");
   }
-  for (const [label, value] of [
-    ["deepseekBaseUrl", config.deepseekBaseUrl],
-    ["qwenBaseUrl", config.qwenBaseUrl],
-    ["visionBaseUrl", config.visionBaseUrl]
-  ]) {
-    const url = new URL(value);
+  for (const [providerId, provider] of Object.entries(config.providers)) {
+    const url = new URL(provider.baseUrl);
     if (url.protocol !== "http:" && url.protocol !== "https:") {
-      throw new Error(`${label} must use http or https.`);
+      throw new Error(`Provider ${providerId} must use http or https.`);
     }
   }
   if (config.maxAutoVisionPerRequest < 0 || config.maxAutoVisionPerRequest > 8) {
@@ -110,4 +111,57 @@ function integer(value, fallback) {
 
 function stripTrailingSlash(value) {
   return String(value).replace(/\/+$/, "");
+}
+
+function normalizeProviders(parsed) {
+  if (parsed.providers && typeof parsed.providers === "object") {
+    return Object.fromEntries(Object.entries(parsed.providers).map(([id, provider]) => [id, {
+      name: provider.name ?? id,
+      baseUrl: stripTrailingSlash(provider.baseUrl),
+      keychainService: provider.keychainService ?? providerKeychainService(id),
+      keychainAccount: provider.keychainAccount ?? "default"
+    }]));
+  }
+  return {
+    deepseek: {
+      name: "DeepSeek",
+      baseUrl: stripTrailingSlash(parsed.deepseekBaseUrl ?? "https://api.deepseek.com"),
+      keychainService: providerKeychainService("deepseek"),
+      keychainAccount: "default"
+    },
+    bailian: {
+      name: "Alibaba Bailian",
+      baseUrl: stripTrailingSlash(parsed.qwenBaseUrl ?? parsed.visionBaseUrl ?? "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+      keychainService: providerKeychainService("bailian"),
+      keychainAccount: "default"
+    }
+  };
+}
+
+function legacyTextRoute(parsed) {
+  const selected = parsed.modelRoutes?.[parsed.codexModel];
+  if (selected) return { provider: selected.provider === "qwen" ? "bailian" : selected.provider, model: selected.upstreamModel };
+  return { provider: "deepseek", model: "deepseek-chat" };
+}
+
+function legacyVisionRoute(parsed) {
+  return { provider: "bailian", model: parsed.visionModel ?? "qwen-vl-max" };
+}
+
+function legacyProviderEnv(providerId) {
+  if (providerId === "deepseek") return process.env.FRIEND_ROUTER_DEEPSEEK_KEY;
+  if (providerId === "bailian") return process.env.FRIEND_ROUTER_QWEN_KEY;
+  return undefined;
+}
+
+function readProviderKey(providerId, provider) {
+  try {
+    return readKeychain(provider.keychainService, provider.keychainAccount);
+  } catch (error) {
+    const legacyService = providerId === "deepseek"
+      ? "com.friend-codex-router.deepseek"
+      : providerId === "bailian" ? "com.friend-codex-router.qwen" : undefined;
+    if (legacyService) return readKeychain(legacyService, "default");
+    throw error;
+  }
 }

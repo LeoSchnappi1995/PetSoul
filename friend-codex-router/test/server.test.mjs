@@ -30,13 +30,15 @@ test("self-contained HTTP gateway calls vision once and forwards text-only chat 
     listenHost: "127.0.0.1",
     listenPort: 0,
     codexModel: "DeepSeek/deepseek-chat",
-    deepseekBaseUrl: "https://deepseek.example",
-    qwenBaseUrl: "https://qwen.example/v1",
+    providers: {
+      deepseek: { name: "DeepSeek", baseUrl: "https://deepseek.example" },
+      bailian: { name: "Bailian", baseUrl: "https://vision.example/v1" }
+    },
+    textRoute: { provider: "deepseek", model: "deepseek-chat" },
+    visionRoute: { provider: "bailian", model: "qwen-vl-test" },
     modelRoutes: {
       "DeepSeek/deepseek-chat": { provider: "deepseek", upstreamModel: "deepseek-chat" }
     },
-    visionBaseUrl: "https://vision.example/v1",
-    visionModel: "qwen-vl-test",
     cacheFile: ":memory:",
     visionPromptVersion: "test-v1",
     maxAutoVisionPerRequest: 1,
@@ -46,7 +48,7 @@ test("self-contained HTTP gateway calls vision once and forwards text-only chat 
   };
   const { server } = await createRouterServer({
     config,
-    secrets: { clientKey: "local-key", deepseekKey: "deepseek-key", qwenKey: "qwen-key", visionKey: "qwen-key" },
+    secrets: { clientKey: "local-key", providerKeys: { deepseek: "deepseek-key", bailian: "qwen-key" }, visionKey: "qwen-key" },
     cache: new VisionCache(":memory:"),
     fetchFn
   });
@@ -90,7 +92,7 @@ test("self-contained HTTP gateway calls vision once and forwards text-only chat 
   assert.equal(metrics.usage.total.requests, 3);
   assert.equal(metrics.usage.total.visionCalls, 1);
   assert.equal(metrics.usage.models.find((item) => item.model === "DeepSeek/deepseek-chat").requests, 2);
-  assert.equal(metrics.usage.models.find((item) => item.model === "qwen-vl-test").requests, 1);
+  assert.equal(metrics.usage.models.find((item) => item.model === "Bailian/qwen-vl-test").requests, 1);
 
   async function post(baseUrl, body) {
     const response = await fetch(`${baseUrl}/v1/responses`, {
