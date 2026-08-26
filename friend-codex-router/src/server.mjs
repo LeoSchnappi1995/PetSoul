@@ -127,7 +127,7 @@ function health(config) {
   return {
     ok: true,
     service: "friend-codex-router",
-    version: "0.2.0",
+    version: "0.2.1",
     listen: `${config.listenHost}:${config.listenPort}`,
     upstream: config.upstreamBaseUrl,
     visionModel: config.visionModel,

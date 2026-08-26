@@ -9,7 +9,7 @@ APP_DIR="$BUILD_DIR/$APP_NAME.app"
 CONTENTS="$APP_DIR/Contents"
 RESOURCES="$CONTENTS/Resources"
 STAGE_DIR="$BUILD_DIR/dmg"
-OUTPUT_DMG="$PROJECT_DIR/dist/Friend-Codex-Router-0.2.0-internal.dmg"
+OUTPUT_DMG="$PROJECT_DIR/dist/Friend-Codex-Router-0.2.1-internal.dmg"
 NODE_BIN="${NODE_BIN:-$(command -v node)}"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
 
@@ -18,6 +18,7 @@ mkdir -p "$CONTENTS/MacOS" "$RESOURCES/node/bin" "$RESOURCES/app" "$STAGE_DIR" "
 
 swiftc "$PROJECT_DIR"/macos/*.swift \
   -parse-as-library \
+  -target arm64-apple-macos13.0 \
   -framework SwiftUI \
   -framework AppKit \
   -framework CryptoKit \
@@ -36,8 +37,8 @@ plutil -create xml1 "$CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :CFBundleName string $APP_NAME" "$CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string $APP_NAME" "$CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :CFBundlePackageType string APPL" "$CONTENTS/Info.plist"
-/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 0.2.0" "$CONTENTS/Info.plist"
-/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 2" "$CONTENTS/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 0.2.1" "$CONTENTS/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 3" "$CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string 13.0" "$CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$CONTENTS/Info.plist"
 

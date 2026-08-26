@@ -5,7 +5,8 @@ import SwiftUI
 
 @main
 struct FriendRouterSetupApp: App {
-    @StateObject private var usage = UsageViewModel()
+    @NSApplicationDelegateAdaptor(FriendRouterAppDelegate.self) private var appDelegate
+    @StateObject private var usage = UsageViewModel.shared
 
     var body: some Scene {
         MenuBarExtra {
@@ -14,12 +15,6 @@ struct FriendRouterSetupApp: App {
             Text(usage.menuTitle)
         }
         .menuBarExtraStyle(.menu)
-
-        Settings {
-            SetupView(monitor: usage)
-                .frame(minWidth: 640, minHeight: 590)
-                .task { usage.start() }
-        }
     }
 }
 
@@ -70,8 +65,7 @@ struct UsageMenuView: View {
     }
 
     private func openSettings() {
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        NSApplication.shared.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        SettingsWindowController.shared.show(monitor: monitor)
     }
 }
 
@@ -84,6 +78,9 @@ struct SetupView: View {
     @State private var visionModel = "qwen-vl-max"
     @State private var status = "先安装并启动 Claude Code Router，在 API Keys 页面创建一个本地 Client Key。"
     @State private var working = false
+    @State private var localClientKeyStored = false
+    @State private var ccrKeyStored = false
+    @State private var visionKeyStored = false
 
     private let textModels = [
         "DeepSeek/deepseek-chat",
@@ -105,12 +102,17 @@ struct SetupView: View {
                     SecureField("DeepSeek API Key", text: $deepSeekKey)
                     SecureField("Qwen / DashScope API Key", text: $qwenKey)
                     SecureField("CCR 本地 Client Key（内测版暂需从 CCR 的 API Keys 页面复制）", text: $ccrClientKey)
+                    Text("本地状态：Codex Key \(storedText(localClientKeyStored)) · CCR Key \(storedText(ccrKeyStored)) · 图片理解 Key \(storedText(visionKeyStored))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     HStack {
                         Button("打开 CCR") { openCCR() }
-                        Button("导入 DeepSeek 与 Qwen 配置") { importProviders() }
+                        Button("导入 DeepSeek 与 Qwen 到 CCR") { importProviders() }
                             .disabled(deepSeekKey.isEmpty || qwenKey.isEmpty)
+                        Button("保存本地连接密钥") { Task { await saveCredentials() } }
+                            .disabled(working || qwenKey.isEmpty || ccrClientKey.isEmpty)
                     }
-                    Text("导入会打开 CCR 的官方预览页；分别确认两次后，密钥才会保存到 CCR。")
+                    Text("DeepSeek/Qwen 服务商 Key 由 CCR 保存；CCR Client Key 与图片理解 Key 由本 App 保存进 macOS 钥匙串。安全原因不会回填明文。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -123,7 +125,14 @@ struct SetupView: View {
                         ForEach(textModels, id: \.self) { Text($0).tag($0) }
                     }
                     TextField("图片理解模型", text: $visionModel)
-                    Text("图片理解与图片生成完全分开；接收图片不会触发生图。")
+                    HStack {
+                        Button("应用模型路由") { Task { await applyRouting() } }
+                            .disabled(working)
+                        Text("文字 → \(textModel)；新图片 → \(visionModel) 一次；后续复用摘要。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("切换文字模型不需要重新输入 Key。图片理解与图片生成完全分开；接收图片不会触发生图。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -135,7 +144,7 @@ struct SetupView: View {
                     HStack {
                         Button("安装并连接 Codex") { Task { await install() } }
                             .buttonStyle(.borderedProminent)
-                            .disabled(working || qwenKey.isEmpty || ccrClientKey.isEmpty || (textModel.hasPrefix("DeepSeek/") && deepSeekKey.isEmpty))
+                            .disabled(working || (!visionKeyStored && qwenKey.isEmpty) || (!ccrKeyStored && ccrClientKey.isEmpty))
                         Button("恢复原 Codex 配置") { Task { await restore() } }
                             .disabled(working)
                         Button("检查运行状态") { Task { await checkHealth() } }
@@ -155,6 +164,52 @@ struct SetupView: View {
                 .foregroundStyle(.secondary)
         }
         .padding(24)
+        .onAppear {
+            loadStoredState()
+            monitor.start()
+        }
+    }
+
+    @MainActor
+    private func saveCredentials() async {
+        working = true
+        defer { working = false }
+        do {
+            let environment = [
+                "FRIEND_ROUTER_CCR_KEY": ccrClientKey,
+                "FRIEND_ROUTER_VISION_KEY": qwenKey,
+                "FRIEND_ROUTER_CODEX_MODEL": textModel,
+                "FRIEND_ROUTER_VISION_MODEL": visionModel
+            ]
+            _ = try runNode("configure.mjs", environment: environment)
+            deepSeekKey = ""
+            qwenKey = ""
+            ccrClientKey = ""
+            loadStoredState()
+            status = "本地连接密钥已保存到 macOS 钥匙串。DeepSeek/Qwen 服务商配置仍以 CCR 中的状态为准。"
+        } catch {
+            status = "保存密钥失败：\(error.localizedDescription)"
+        }
+    }
+
+    @MainActor
+    private func applyRouting() async {
+        working = true
+        defer { working = false }
+        do {
+            let environment = [
+                "FRIEND_ROUTER_CODEX_MODEL": textModel,
+                "FRIEND_ROUTER_VISION_MODEL": visionModel
+            ]
+            _ = try runNode("update-routing.mjs", environment: environment)
+            _ = try runNode("install-codex.mjs", arguments: ["install", "--model=\(textModel)"])
+            if ccrKeyStored && visionKeyStored {
+                _ = try runNode("install-service.mjs", arguments: ["install"])
+            }
+            status = "路由已应用：文字任务走 \(textModel)，新图片首次走 \(visionModel)。请在 Codex 中新开任务使默认文字模型立即生效。"
+        } catch {
+            status = "应用路由失败：\(error.localizedDescription)"
+        }
     }
 
     @MainActor
@@ -166,13 +221,29 @@ struct SetupView: View {
         working = true
         defer { working = false }
         do {
-            let environment = [
-                "FRIEND_ROUTER_CCR_KEY": ccrClientKey,
-                "FRIEND_ROUTER_VISION_KEY": qwenKey,
+            if !ccrClientKey.isEmpty || !qwenKey.isEmpty {
+                guard !ccrClientKey.isEmpty && !qwenKey.isEmpty else {
+                    throw SetupError("首次保存需要同时填写 CCR Client Key 与 Qwen/DashScope Key。")
+                }
+                let environment = [
+                    "FRIEND_ROUTER_CCR_KEY": ccrClientKey,
+                    "FRIEND_ROUTER_VISION_KEY": qwenKey,
+                    "FRIEND_ROUTER_CODEX_MODEL": textModel,
+                    "FRIEND_ROUTER_VISION_MODEL": visionModel
+                ]
+                _ = try runNode("configure.mjs", environment: environment)
+                loadStoredState()
+            }
+            guard ccrKeyStored || keychainHas(service: "com.friend-codex-router.ccr") else {
+                throw SetupError("缺少 CCR Client Key，请先在上方保存本地连接密钥。")
+            }
+            guard visionKeyStored || keychainHas(service: "com.friend-codex-router.vision") else {
+                throw SetupError("缺少 Qwen 图片理解 Key，请先在上方保存本地连接密钥。")
+            }
+            _ = try runNode("update-routing.mjs", environment: [
                 "FRIEND_ROUTER_CODEX_MODEL": textModel,
                 "FRIEND_ROUTER_VISION_MODEL": visionModel
-            ]
-            _ = try runNode("configure.mjs", environment: environment)
+            ])
             _ = try runNode("install-codex.mjs", arguments: ["install", "--model=\(textModel)"])
             _ = try runNode("install-service.mjs", arguments: ["install"])
             try? SMAppService.mainApp.register()
@@ -223,6 +294,36 @@ struct SetupView: View {
         }
     }
 
+    private func loadStoredState() {
+        localClientKeyStored = keychainHas(service: "com.friend-codex-router.client")
+        ccrKeyStored = keychainHas(service: "com.friend-codex-router.ccr")
+        visionKeyStored = keychainHas(service: "com.friend-codex-router.vision")
+        let configURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Friend Codex Router/config.json")
+        if let data = try? Data(contentsOf: configURL),
+           let routing = try? JSONDecoder().decode(StoredRouting.self, from: data) {
+            textModel = routing.codexModel ?? textModel
+            visionModel = routing.visionModel ?? visionModel
+        }
+    }
+
+    private func keychainHas(service: String) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        process.arguments = ["find-generic-password", "-s", service, "-a", "default"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            return false
+        }
+    }
+
+    private func storedText(_ stored: Bool) -> String { stored ? "已保存" : "未保存" }
+
     private func openProvider(name: String, baseURL: String, key: String, models: String) {
         var components = URLComponents()
         components.scheme = "ccr"
@@ -266,6 +367,11 @@ struct SetupView: View {
         guard process.terminationStatus == 0 else { throw SetupError(output.trimmingCharacters(in: .whitespacesAndNewlines)) }
         return output
     }
+}
+
+private struct StoredRouting: Decodable {
+    let codexModel: String?
+    let visionModel: String?
 }
 
 struct SetupError: LocalizedError {

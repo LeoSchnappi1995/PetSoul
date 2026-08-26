@@ -53,6 +53,22 @@ security add-generic-password -U -s com.friend-codex-router.vision -a default -w
 
 The local client key is the key Codex uses to call this proxy. It can be a randomly generated value and is separate from provider keys.
 
+### Where keys live
+
+- DeepSeek and Qwen provider keys are imported into CCR through **导入 DeepSeek 与 Qwen 到 CCR**.
+- The CCR client key is stored in macOS Keychain under `com.friend-codex-router.ccr`.
+- The Qwen vision key is stored in macOS Keychain under `com.friend-codex-router.vision`.
+- The local key used by Codex is generated automatically and stored under `com.friend-codex-router.client`.
+- Secure fields intentionally reopen blank. The Settings window shows only whether each local key is saved.
+
+### How routing is controlled
+
+- The **默认文字模型** picker changes the model selector written to Codex user config.
+- **应用模型路由** changes text and vision models without asking for keys again.
+- New image bytes are intercepted by Friend Codex Router and sent once to the configured Qwen vision model.
+- The cached visual summary replaces raw image blocks before the request reaches CCR.
+- Text-only work is forwarded to CCR with the configured DeepSeek/Qwen text model selector.
+
 ## Run
 
 ```bash
@@ -132,10 +148,10 @@ For each release, upload the DMG and generate its manifest:
 
 ```bash
 node scripts/publish-update.mjs manifest \
-  --dmg=dist/Friend-Codex-Router-0.2.0-internal.dmg \
-  --version=0.2.0 \
-  --build=2 \
-  --url=https://downloads.example.com/Friend-Codex-Router-0.2.0.dmg \
+  --dmg=dist/Friend-Codex-Router-0.2.1-internal.dmg \
+  --version=0.2.1 \
+  --build=3 \
+  --url=https://downloads.example.com/Friend-Codex-Router-0.2.1.dmg \
   --private=release-private.pem \
   --out=latest.json
 ```

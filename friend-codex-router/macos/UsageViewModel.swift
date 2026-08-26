@@ -3,6 +3,7 @@ import Foundation
 
 @MainActor
 final class UsageViewModel: ObservableObject {
+    static let shared = UsageViewModel()
     @Published var snapshot: UsageSnapshot?
     @Published var runtime: RuntimeMetrics?
     @Published var reachable = false
@@ -16,7 +17,7 @@ final class UsageViewModel: ObservableObject {
     private(set) var appConfig = RouterAppConfig(updateManifestURL: nil, updatePublicKeyBase64: nil, updateCheckIntervalSeconds: 900)
 
     var currentVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.2.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.2.1"
     }
 
     var menuTitle: String {
