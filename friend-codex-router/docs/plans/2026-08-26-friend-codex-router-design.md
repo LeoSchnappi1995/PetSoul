@@ -1,5 +1,7 @@
 # Friend Codex Router design
 
+> Superseded for 0.3.0 by [2026-08-26-self-contained-030-design.md](./2026-08-26-self-contained-030-design.md). The CCR-dependent architecture below documents the 0.1/0.2 prototype only.
+
 ## Goal
 
 Ship a macOS-friendly local gateway that lets a non-technical user connect Codex to models configured in Claude Code Router (CCR), while ensuring that an image-understanding model is not called repeatedly just because an earlier image remains in the conversation history.

@@ -20,15 +20,17 @@ export async function loadConfig(configPath = process.env.FRIEND_ROUTER_CONFIG ?
     listenHost: parsed.listenHost ?? "127.0.0.1",
     listenPort: integer(parsed.listenPort, 3566),
     codexModel: parsed.codexModel ?? "DeepSeek/deepseek-chat",
-    upstreamBaseUrl: stripTrailingSlash(parsed.upstreamBaseUrl ?? "http://127.0.0.1:3456"),
-    upstreamKeychainService: parsed.upstreamKeychainService ?? "com.friend-codex-router.ccr",
-    upstreamKeychainAccount: parsed.upstreamKeychainAccount ?? "default",
     clientKeychainService: parsed.clientKeychainService ?? "com.friend-codex-router.client",
     clientKeychainAccount: parsed.clientKeychainAccount ?? "default",
+    deepseekBaseUrl: stripTrailingSlash(parsed.deepseekBaseUrl ?? "https://api.deepseek.com"),
+    deepseekKeychainService: parsed.deepseekKeychainService ?? "com.friend-codex-router.deepseek",
+    deepseekKeychainAccount: parsed.deepseekKeychainAccount ?? "default",
+    qwenBaseUrl: stripTrailingSlash(parsed.qwenBaseUrl ?? "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+    qwenKeychainService: parsed.qwenKeychainService ?? "com.friend-codex-router.qwen",
+    qwenKeychainAccount: parsed.qwenKeychainAccount ?? "default",
+    modelRoutes: parsed.modelRoutes ?? defaultModelRoutes(),
     visionBaseUrl: stripTrailingSlash(parsed.visionBaseUrl ?? "https://dashscope.aliyuncs.com/compatible-mode/v1"),
     visionModel: parsed.visionModel ?? "qwen-vl-max",
-    visionKeychainService: parsed.visionKeychainService ?? "com.friend-codex-router.vision",
-    visionKeychainAccount: parsed.visionKeychainAccount ?? "default",
     cacheFile: path.resolve(expandHome(parsed.cacheFile ?? "~/Library/Application Support/Friend Codex Router/vision-cache.json")),
     usageFile: path.resolve(expandHome(parsed.usageFile ?? "~/Library/Application Support/Friend Codex Router/usage.json")),
     usageWindow: parsed.usageWindow ?? "week",
@@ -51,10 +53,20 @@ export function loadSecrets(config) {
   return {
     clientKey: process.env.FRIEND_ROUTER_CLIENT_KEY
       ?? readKeychain(config.clientKeychainService, config.clientKeychainAccount),
-    upstreamKey: process.env.FRIEND_ROUTER_CCR_KEY
-      ?? readKeychain(config.upstreamKeychainService, config.upstreamKeychainAccount),
-    visionKey: process.env.FRIEND_ROUTER_VISION_KEY
-      ?? readKeychain(config.visionKeychainService, config.visionKeychainAccount)
+    deepseekKey: process.env.FRIEND_ROUTER_DEEPSEEK_KEY
+      ?? readKeychain(config.deepseekKeychainService, config.deepseekKeychainAccount),
+    qwenKey: process.env.FRIEND_ROUTER_QWEN_KEY
+      ?? readKeychain(config.qwenKeychainService, config.qwenKeychainAccount),
+    visionKey: process.env.FRIEND_ROUTER_QWEN_KEY
+      ?? readKeychain(config.qwenKeychainService, config.qwenKeychainAccount)
+  };
+}
+
+function defaultModelRoutes() {
+  return {
+    "DeepSeek/deepseek-chat": { provider: "deepseek", upstreamModel: "deepseek-chat" },
+    "DeepSeek/deepseek-reasoner": { provider: "deepseek", upstreamModel: "deepseek-reasoner" },
+    "Alibaba Bailian/qwen3-coder-plus": { provider: "qwen", upstreamModel: "qwen3-coder-plus" }
   };
 }
 
@@ -78,7 +90,8 @@ function validateConfig(config) {
     throw new Error("listenPort must be a valid TCP port.");
   }
   for (const [label, value] of [
-    ["upstreamBaseUrl", config.upstreamBaseUrl],
+    ["deepseekBaseUrl", config.deepseekBaseUrl],
+    ["qwenBaseUrl", config.qwenBaseUrl],
     ["visionBaseUrl", config.visionBaseUrl]
   ]) {
     const url = new URL(value);

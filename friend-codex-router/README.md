@@ -1,12 +1,14 @@
 # Friend Codex Router
 
-Friend Codex Router is a local proxy placed between Codex and [Claude Code Router](https://github.com/musistudio/claude-code-router). It prevents a historical image from causing a new paid vision-model call on every later agent turn.
+Friend Codex Router is a self-contained local gateway that connects Codex directly to DeepSeek and Qwen. It translates Codex Responses/tool traffic into OpenAI-compatible Chat Completions and prevents a historical image from causing a new paid vision-model call on every later agent turn.
 
 ## Current milestone
 
 This repository currently contains the internal-test core:
 
-- OpenAI Responses-compatible pass-through to CCR;
+- OpenAI Responses to Chat Completions protocol translation;
+- function-tool and free-form custom-tool bridging, including `apply_patch`;
+- Responses JSON and streaming SSE generation for Codex;
 - latest-user-turn image detection;
 - SHA-256 image fingerprints;
 - persistent vision summaries;
@@ -18,21 +20,14 @@ This repository currently contains the internal-test core:
 - a native menu-bar dashboard with per-model request, token, vision-call, and cost totals;
 - signed update manifests with HTTPS download and SHA-256 verification.
 
-The formal signed app and embedded CCR runtime are the next packaging milestone.
+No second router is required. The remaining distribution milestone is Developer ID signing and Apple notarization.
 
 ## Prerequisites for the internal build
 
 - macOS;
 - Node.js 22 or newer;
-- CCR Desktop or CLI running on `127.0.0.1:3456`;
-- a CCR client key;
-- a Qwen/DashScope key for the vision model.
-
-Import providers into CCR using its supported UI or deeplinks. Recommended first setup:
-
-- DeepSeek provider for the default text model;
-- Alibaba Bailian/Qwen provider for an alternative text model and a vision-capable model;
-- one CCR client key restricted to the required models.
+- a DeepSeek API key;
+- a Qwen/DashScope API key.
 
 ## Configure secrets
 
@@ -47,17 +42,16 @@ Store the three local secrets in Keychain:
 
 ```bash
 security add-generic-password -U -s com.friend-codex-router.client -a default -w '<local-client-key>'
-security add-generic-password -U -s com.friend-codex-router.ccr -a default -w '<ccr-client-key>'
-security add-generic-password -U -s com.friend-codex-router.vision -a default -w '<qwen-vision-key>'
+security add-generic-password -U -s com.friend-codex-router.deepseek -a default -w '<deepseek-key>'
+security add-generic-password -U -s com.friend-codex-router.qwen -a default -w '<qwen-key>'
 ```
 
 The local client key is the key Codex uses to call this proxy. It can be a randomly generated value and is separate from provider keys.
 
 ### Where keys live
 
-- DeepSeek and Qwen provider keys are imported into CCR through **导入 DeepSeek 与 Qwen 到 CCR**.
-- The CCR client key is stored in macOS Keychain under `com.friend-codex-router.ccr`.
-- The Qwen vision key is stored in macOS Keychain under `com.friend-codex-router.vision`.
+- The DeepSeek key is stored under `com.friend-codex-router.deepseek`.
+- The Qwen text/vision key is stored under `com.friend-codex-router.qwen`.
 - The local key used by Codex is generated automatically and stored under `com.friend-codex-router.client`.
 - Secure fields intentionally reopen blank. The Settings window shows only whether each local key is saved.
 
@@ -66,8 +60,8 @@ The local client key is the key Codex uses to call this proxy. It can be a rando
 - The **默认文字模型** picker changes the model selector written to Codex user config.
 - **应用模型路由** changes text and vision models without asking for keys again.
 - New image bytes are intercepted by Friend Codex Router and sent once to the configured Qwen vision model.
-- The cached visual summary replaces raw image blocks before the request reaches CCR.
-- Text-only work is forwarded to CCR with the configured DeepSeek/Qwen text model selector.
+- The cached visual summary replaces raw image blocks before the request reaches the text provider.
+- Text-only work is routed directly to the configured DeepSeek/Qwen endpoint.
 
 ## Run
 
@@ -121,7 +115,7 @@ Codex provider settings must live in user-level config. See official OpenAI docu
 - A cached image is not analyzed again.
 - A text-only follow-up never triggers vision just because an old image remains in history.
 - "Analyze again", OCR, zoom, or detail-inspection language permits one targeted re-analysis.
-- Raw image blocks are removed before the text request reaches CCR.
+- Raw image blocks are removed before the text request reaches DeepSeek/Qwen.
 - Image generation is never triggered by image receipt.
 
 ## Signed remote updates
@@ -148,10 +142,10 @@ For each release, upload the DMG and generate its manifest:
 
 ```bash
 node scripts/publish-update.mjs manifest \
-  --dmg=dist/Friend-Codex-Router-0.2.1-internal.dmg \
-  --version=0.2.1 \
-  --build=3 \
-  --url=https://downloads.example.com/Friend-Codex-Router-0.2.1.dmg \
+  --dmg=dist/Friend-Codex-Router-0.3.0-internal.dmg \
+  --version=0.3.0 \
+  --build=4 \
+  --url=https://downloads.example.com/Friend-Codex-Router-0.3.0.dmg \
   --private=release-private.pem \
   --out=latest.json
 ```

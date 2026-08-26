@@ -3,11 +3,11 @@ import test from "node:test";
 import { VisionCache } from "../src/cache.mjs";
 import { createRouterServer } from "../src/server.mjs";
 
-test("HTTP proxy calls vision once and forwards text-only requests to CCR", async (t) => {
+test("self-contained HTTP gateway calls vision once and forwards text-only chat requests", async (t) => {
   let visionCalls = 0;
   const upstreamBodies = [];
   const fetchFn = async (url, options = {}) => {
-    if (String(url).endsWith("/chat/completions")) {
+    if (String(url).startsWith("https://vision.example")) {
       visionCalls += 1;
       return new Response(JSON.stringify({
         model: "qwen-vl-test",
@@ -17,10 +17,10 @@ test("HTTP proxy calls vision once and forwards text-only requests to CCR", asyn
     }
     upstreamBodies.push(JSON.parse(Buffer.from(options.body).toString("utf8")));
     return new Response(JSON.stringify({
-      id: "response-test",
-      model: "DeepSeek/deepseek-chat",
-      usage: { input_tokens: 1000, output_tokens: 200, total_tokens: 1200 },
-      output: []
+      id: "chat-test",
+      model: "deepseek-chat",
+      usage: { prompt_tokens: 1000, completion_tokens: 200, total_tokens: 1200 },
+      choices: [{ finish_reason: "stop", message: { role: "assistant", content: "Provider answer" } }]
     }), {
       status: 200,
       headers: { "content-type": "application/json" }
@@ -29,7 +29,12 @@ test("HTTP proxy calls vision once and forwards text-only requests to CCR", asyn
   const config = {
     listenHost: "127.0.0.1",
     listenPort: 0,
-    upstreamBaseUrl: "http://127.0.0.1:3456",
+    codexModel: "DeepSeek/deepseek-chat",
+    deepseekBaseUrl: "https://deepseek.example",
+    qwenBaseUrl: "https://qwen.example/v1",
+    modelRoutes: {
+      "DeepSeek/deepseek-chat": { provider: "deepseek", upstreamModel: "deepseek-chat" }
+    },
     visionBaseUrl: "https://vision.example/v1",
     visionModel: "qwen-vl-test",
     cacheFile: ":memory:",
@@ -41,7 +46,7 @@ test("HTTP proxy calls vision once and forwards text-only requests to CCR", asyn
   };
   const { server } = await createRouterServer({
     config,
-    secrets: { clientKey: "local-key", upstreamKey: "ccr-key", visionKey: "vision-key" },
+    secrets: { clientKey: "local-key", deepseekKey: "deepseek-key", qwenKey: "qwen-key", visionKey: "qwen-key" },
     cache: new VisionCache(":memory:"),
     fetchFn
   });
@@ -77,8 +82,9 @@ test("HTTP proxy calls vision once and forwards text-only requests to CCR", asyn
 
   assert.equal(visionCalls, 1);
   assert.equal(upstreamBodies.length, 2);
-  assert.equal(upstreamBodies.some(containsImageType), false);
   assert.match(JSON.stringify(upstreamBodies[1]), /A settings dialog with a Save button/);
+  assert.equal(upstreamBodies[0].model, "deepseek-chat");
+  assert.equal(upstreamBodies.some(containsImageType), false);
   const metricsResponse = await fetch(`${base}/metrics?window=week`);
   const metrics = await metricsResponse.json();
   assert.equal(metrics.usage.total.requests, 3);

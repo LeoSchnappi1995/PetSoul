@@ -26,14 +26,14 @@ export async function configure(options = {}) {
   }
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
   const clientKey = options.clientKey ?? process.env.FRIEND_ROUTER_CLIENT_KEY ?? `fcr_${randomBytes(24).toString("base64url")}`;
-  const ccrKey = options.ccrKey ?? process.env.FRIEND_ROUTER_CCR_KEY;
-  const visionKey = options.visionKey ?? process.env.FRIEND_ROUTER_VISION_KEY;
-  if (!ccrKey) throw new Error("Set FRIEND_ROUTER_CCR_KEY to the CCR client key.");
-  if (!visionKey) throw new Error("Set FRIEND_ROUTER_VISION_KEY to the Qwen/DashScope vision key.");
+  const deepseekKey = options.deepseekKey ?? process.env.FRIEND_ROUTER_DEEPSEEK_KEY;
+  const qwenKey = options.qwenKey ?? process.env.FRIEND_ROUTER_QWEN_KEY;
+  if (!deepseekKey) throw new Error("Set FRIEND_ROUTER_DEEPSEEK_KEY to the DeepSeek API key.");
+  if (!qwenKey) throw new Error("Set FRIEND_ROUTER_QWEN_KEY to the Qwen/DashScope API key.");
   writeKeychain("com.friend-codex-router.client", "default", clientKey);
-  writeKeychain("com.friend-codex-router.ccr", "default", ccrKey);
-  writeKeychain("com.friend-codex-router.vision", "default", visionKey);
-  return { configPath, clientKeyStored: true, ccrKeyStored: true, visionKeyStored: true };
+  writeKeychain("com.friend-codex-router.deepseek", "default", deepseekKey);
+  writeKeychain("com.friend-codex-router.qwen", "default", qwenKey);
+  return { configPath, clientKeyStored: true, deepseekKeyStored: true, qwenKeyStored: true };
 }
 
 function writeKeychain(service, account, value) {

@@ -1,13 +1,15 @@
 import { timingSafeEqual } from "node:crypto";
 import http from "node:http";
-import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { VisionCache } from "./cache.mjs";
 import { loadConfig, loadSecrets } from "./config.mjs";
+import { callChatCompletions, modelList, resolveModelRoute } from "./provider-client.mjs";
+import { chatToResponses } from "./protocol/chat-to-responses.mjs";
+import { streamChatAsResponses } from "./protocol/chat-stream-to-responses.mjs";
+import { responsesToChat } from "./protocol/responses-to-chat.mjs";
 import { rewriteRequestWithVision } from "./rewrite.mjs";
 import { analyzeVision } from "./vision.mjs";
-import { UsageStore } from "./usage-store.mjs";
-import { createUsageCaptureTransform } from "./usage-capture.mjs";
+import { extractCost, UsageStore } from "./usage-store.mjs";
 
 export async function createRouterServer(options = {}) {
   const config = options.config ?? await loadConfig();
@@ -39,69 +41,80 @@ export async function createRouterServer(options = {}) {
         });
       }
       if (!authorized(request, secrets.clientKey)) return json(response, 401, errorPayload("invalid_local_key", "Invalid Friend Codex Router client key."));
+      if (request.method === "GET" && /\/(?:v1\/)?models$/.test(requestUrl.pathname)) {
+        return json(response, 200, { object: "list", data: modelList(config) });
+      }
+      if (request.method !== "POST" || !isResponsesPath(requestUrl.pathname)) {
+        return json(response, 404, errorPayload("not_found", "Friend Codex Router supports /v1/responses and /v1/models."));
+      }
 
       metrics.requests += 1;
       const bodyBuffer = await readRequestBody(request, config.maxRequestBytes);
-      let outboundBody = bodyBuffer;
       const contentType = String(request.headers["content-type"] ?? "");
-      if (bodyBuffer.length && contentType.includes("application/json") && isResponsesPath(request.url)) {
-        const parsed = JSON.parse(bodyBuffer.toString("utf8"));
-        requestModel = typeof parsed.model === "string" ? parsed.model : undefined;
-        const rewritten = await rewriteRequestWithVision(parsed, {
-          cache,
-          promptVersion: config.visionPromptVersion,
-          maxAutoVisionPerRequest: config.maxAutoVisionPerRequest,
-          maxImageBytes: config.maxImageBytes,
-          fetchFn,
-          analyze: async ({ source, prompt }) => {
-            try {
-              const result = await analyzeVision({
-                apiKey: secrets.visionKey,
-                baseUrl: config.visionBaseUrl,
-                model: config.visionModel,
-                source,
-                prompt,
-                timeoutMs: config.visionTimeoutMs,
-                fetchFn
-              });
-              await usageStore.record({
-                model: result.model,
-                usage: result.usage,
-                cost: result.cost,
-                kind: "vision",
-                ok: true
-              });
-              return result;
-            } catch (error) {
-              await usageStore.record({ model: config.visionModel, kind: "vision", ok: false });
-              throw error;
-            }
+      if (!bodyBuffer.length || !contentType.includes("application/json")) {
+        return json(response, 400, errorPayload("invalid_request", "Responses requests must use a JSON body."));
+      }
+      const parsed = JSON.parse(bodyBuffer.toString("utf8"));
+      if (parsed.background) return json(response, 400, errorPayload("unsupported_background", "Background Responses are not supported in the internal build."));
+      requestModel = typeof parsed.model === "string" ? parsed.model : config.codexModel;
+      const rewritten = await rewriteRequestWithVision(parsed, {
+        cache,
+        promptVersion: config.visionPromptVersion,
+        maxAutoVisionPerRequest: config.maxAutoVisionPerRequest,
+        maxImageBytes: config.maxImageBytes,
+        fetchFn,
+        analyze: async ({ source, prompt }) => {
+          try {
+            const result = await analyzeVision({
+              apiKey: secrets.visionKey,
+              baseUrl: config.visionBaseUrl,
+              model: config.visionModel,
+              source,
+              prompt,
+              timeoutMs: config.visionTimeoutMs,
+              fetchFn
+            });
+            await usageStore.record({
+              model: result.model,
+              usage: result.usage,
+              cost: result.cost,
+              kind: "vision",
+              ok: true
+            });
+            return result;
+          } catch (error) {
+            await usageStore.record({ model: config.visionModel, kind: "vision", ok: false });
+            throw error;
           }
-        });
-        metrics.visionCalls += rewritten.metrics.newVisionCalls;
-        metrics.visionCacheHits += rewritten.metrics.cacheHits;
-        metrics.imagePlaceholders += rewritten.metrics.placeholders;
-        outboundBody = Buffer.from(JSON.stringify(rewritten.body));
-      }
+        }
+      });
+      metrics.visionCalls += rewritten.metrics.newVisionCalls;
+      metrics.visionCacheHits += rewritten.metrics.cacheHits;
+      metrics.imagePlaceholders += rewritten.metrics.placeholders;
 
-      const upstreamResponse = await fetchFn(`${config.upstreamBaseUrl}${request.url}`, {
-        method: request.method,
-        headers: upstreamHeaders(request.headers, secrets.upstreamKey, outboundBody.length),
-        body: canHaveBody(request.method) ? outboundBody : undefined,
-        redirect: "manual"
+      const route = resolveModelRoute(config, secrets, requestModel);
+      const converted = responsesToChat(rewritten.body, route);
+      const upstreamResponse = await callChatCompletions(route, converted.payload, {
+        fetchFn,
+        timeoutMs: 300_000,
+        retries: 2
       });
-      response.writeHead(upstreamResponse.status, responseHeaders(upstreamResponse.headers));
-      if (!upstreamResponse.body) return response.end();
-      if (!shouldTrackUsage(requestUrl.pathname)) {
-        return Readable.fromWeb(upstreamResponse.body).pipe(response);
+      const upstreamType = upstreamResponse.headers.get("content-type") ?? "";
+      if (converted.payload.stream && upstreamType.includes("text/event-stream")) {
+        const result = await streamChatAsResponses(upstreamResponse, response, converted);
+        await usageStore.record({ model: converted.requestedModel, usage: result.usage, kind: "text", ok: true });
+        return;
       }
-      const capture = createUsageCaptureTransform({
-        requestModel,
-        contentType: upstreamResponse.headers.get("content-type") ?? "",
-        ok: upstreamResponse.ok,
-        onComplete: (record) => usageStore.record({ ...record, kind: "text" })
+      const chatPayload = await upstreamResponse.json();
+      const output = chatToResponses(chatPayload, converted);
+      await usageStore.record({
+        model: converted.requestedModel,
+        usage: chatPayload.usage,
+        cost: extractCost(chatPayload),
+        kind: "text",
+        ok: true
       });
-      Readable.fromWeb(upstreamResponse.body).pipe(capture).pipe(response);
+      return json(response, 200, output);
     } catch (error) {
       metrics.proxyErrors += 1;
       if (requestModel) await usageStore.record({ model: requestModel, kind: "text", ok: false });
@@ -127,9 +140,9 @@ function health(config) {
   return {
     ok: true,
     service: "friend-codex-router",
-    version: "0.2.1",
+    version: "0.3.0",
     listen: `${config.listenHost}:${config.listenPort}`,
-    upstream: config.upstreamBaseUrl,
+    providers: ["deepseek", "qwen"],
     visionModel: config.visionModel,
     visionPolicy: "new-image-once-with-cache"
   };
@@ -149,10 +162,6 @@ function isResponsesPath(url = "") {
   return /\/(?:v1\/)?responses(?:\?|$)/.test(url);
 }
 
-function shouldTrackUsage(pathname = "") {
-  return /\/(?:v1\/)?(?:responses|chat\/completions|messages)$/.test(pathname);
-}
-
 async function readRequestBody(request, limit) {
   if (!canHaveBody(request.method)) return Buffer.alloc(0);
   const chunks = [];
@@ -167,28 +176,6 @@ async function readRequestBody(request, limit) {
     chunks.push(chunk);
   }
   return Buffer.concat(chunks);
-}
-
-function upstreamHeaders(input, upstreamKey, contentLength) {
-  const headers = {};
-  for (const [name, value] of Object.entries(input)) {
-    const lower = name.toLowerCase();
-    if (["authorization", "host", "connection", "content-length", "transfer-encoding"].includes(lower)) continue;
-    if (Array.isArray(value)) headers[name] = value.join(", ");
-    else if (value !== undefined) headers[name] = value;
-  }
-  headers.authorization = `Bearer ${upstreamKey}`;
-  if (contentLength) headers["content-length"] = String(contentLength);
-  return headers;
-}
-
-function responseHeaders(input) {
-  const headers = {};
-  for (const [name, value] of input.entries()) {
-    if (["connection", "keep-alive", "transfer-encoding"].includes(name.toLowerCase())) continue;
-    headers[name] = value;
-  }
-  return headers;
 }
 
 function canHaveBody(method = "GET") {

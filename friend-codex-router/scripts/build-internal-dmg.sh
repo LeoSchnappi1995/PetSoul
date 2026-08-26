@@ -9,7 +9,7 @@ APP_DIR="$BUILD_DIR/$APP_NAME.app"
 CONTENTS="$APP_DIR/Contents"
 RESOURCES="$CONTENTS/Resources"
 STAGE_DIR="$BUILD_DIR/dmg"
-OUTPUT_DMG="$PROJECT_DIR/dist/Friend-Codex-Router-0.2.1-internal.dmg"
+OUTPUT_DMG="$PROJECT_DIR/dist/Friend-Codex-Router-0.3.0-internal.dmg"
 NODE_BIN="${NODE_BIN:-$(command -v node)}"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
 
@@ -37,8 +37,8 @@ plutil -create xml1 "$CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :CFBundleName string $APP_NAME" "$CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string $APP_NAME" "$CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :CFBundlePackageType string APPL" "$CONTENTS/Info.plist"
-/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 0.2.1" "$CONTENTS/Info.plist"
-/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 3" "$CONTENTS/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 0.3.0" "$CONTENTS/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 4" "$CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string 13.0" "$CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$CONTENTS/Info.plist"
 
@@ -47,9 +47,5 @@ codesign --force --deep --options runtime --sign "$SIGN_IDENTITY" "$APP_DIR"
 
 cp -R "$APP_DIR" "$STAGE_DIR/$APP_NAME.app"
 ln -s /Applications "$STAGE_DIR/Applications"
-if [[ -n "${CCR_APP_PATH:-}" && -d "$CCR_APP_PATH" ]]; then
-  cp -R "$CCR_APP_PATH" "$STAGE_DIR/Claude Code Router.app"
-fi
-
 hdiutil create -volname "$APP_NAME" -srcfolder "$STAGE_DIR" -ov -format UDZO "$OUTPUT_DMG"
 echo "$OUTPUT_DMG"

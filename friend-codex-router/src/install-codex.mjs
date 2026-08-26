@@ -91,7 +91,7 @@ export function patchCodexConfig(content, input) {
   let inTopLevel = true;
   for (const line of lines) {
     if (/^\s*\[/.test(line)) inTopLevel = false;
-    if (inTopLevel && /^\s*(model_provider|model)\s*=/.test(line)) continue;
+    if (inTopLevel && /^\s*(model_provider|model|disable_response_storage)\s*=/.test(line)) continue;
     result.push(line);
   }
   while (result.length && result[0] === "") result.shift();
@@ -99,6 +99,7 @@ export function patchCodexConfig(content, input) {
   const top = [
     `model_provider = "friend_router"`,
     `model = ${tomlString(input.model)}`,
+    `disable_response_storage = true`,
     ""
   ];
   const provider = [
