@@ -1,13 +1,13 @@
 {
   "name": "friend-codex-router",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "A local Codex-to-CCR gateway with one-time vision understanding and persistent image-summary caching.",
   "scripts": {
     "start": "node src/server.mjs",
     "test": "node --test",
-    "check": "node --check src/server.mjs && node --check src/install-codex.mjs && node --test"
+    "check": "for file in src/*.mjs scripts/*.mjs; do node --check \"$file\"; done && node --test"
   },
   "engines": {
     "node": ">=22"

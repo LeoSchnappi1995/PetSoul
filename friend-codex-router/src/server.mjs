@@ -6,13 +6,17 @@ import { VisionCache } from "./cache.mjs";
 import { loadConfig, loadSecrets } from "./config.mjs";
 import { rewriteRequestWithVision } from "./rewrite.mjs";
 import { analyzeVision } from "./vision.mjs";
+import { UsageStore } from "./usage-store.mjs";
+import { createUsageCaptureTransform } from "./usage-capture.mjs";
 
 export async function createRouterServer(options = {}) {
   const config = options.config ?? await loadConfig();
   const secrets = options.secrets ?? loadSecrets(config);
   const fetchFn = options.fetchFn ?? fetch;
   const cache = options.cache ?? new VisionCache(config.cacheFile);
+  const usageStore = options.usageStore ?? new UsageStore(config.usageFile ?? ":memory:", { pricing: config.modelPricing ?? {} });
   await cache.load();
+  await usageStore.load();
   const metrics = {
     startedAt: new Date().toISOString(),
     requests: 0,
@@ -23,9 +27,17 @@ export async function createRouterServer(options = {}) {
   };
 
   const server = http.createServer(async (request, response) => {
+    let requestModel;
     try {
-      if (request.url === "/health") return json(response, 200, health(config));
-      if (request.url === "/metrics") return json(response, 200, { ...metrics, cache: cache.snapshot() });
+      const requestUrl = new URL(request.url, `http://${config.listenHost}:${config.listenPort}`);
+      if (requestUrl.pathname === "/health") return json(response, 200, health(config));
+      if (requestUrl.pathname === "/metrics") {
+        const window = requestUrl.searchParams.get("window") ?? config.usageWindow;
+        return json(response, 200, {
+          runtime: { ...metrics, cache: cache.snapshot() },
+          usage: await usageStore.snapshot(window)
+        });
+      }
       if (!authorized(request, secrets.clientKey)) return json(response, 401, errorPayload("invalid_local_key", "Invalid Friend Codex Router client key."));
 
       metrics.requests += 1;
@@ -34,21 +46,37 @@ export async function createRouterServer(options = {}) {
       const contentType = String(request.headers["content-type"] ?? "");
       if (bodyBuffer.length && contentType.includes("application/json") && isResponsesPath(request.url)) {
         const parsed = JSON.parse(bodyBuffer.toString("utf8"));
+        requestModel = typeof parsed.model === "string" ? parsed.model : undefined;
         const rewritten = await rewriteRequestWithVision(parsed, {
           cache,
           promptVersion: config.visionPromptVersion,
           maxAutoVisionPerRequest: config.maxAutoVisionPerRequest,
           maxImageBytes: config.maxImageBytes,
           fetchFn,
-          analyze: async ({ source, prompt }) => analyzeVision({
-            apiKey: secrets.visionKey,
-            baseUrl: config.visionBaseUrl,
-            model: config.visionModel,
-            source,
-            prompt,
-            timeoutMs: config.visionTimeoutMs,
-            fetchFn
-          })
+          analyze: async ({ source, prompt }) => {
+            try {
+              const result = await analyzeVision({
+                apiKey: secrets.visionKey,
+                baseUrl: config.visionBaseUrl,
+                model: config.visionModel,
+                source,
+                prompt,
+                timeoutMs: config.visionTimeoutMs,
+                fetchFn
+              });
+              await usageStore.record({
+                model: result.model,
+                usage: result.usage,
+                cost: result.cost,
+                kind: "vision",
+                ok: true
+              });
+              return result;
+            } catch (error) {
+              await usageStore.record({ model: config.visionModel, kind: "vision", ok: false });
+              throw error;
+            }
+          }
         });
         metrics.visionCalls += rewritten.metrics.newVisionCalls;
         metrics.visionCacheHits += rewritten.metrics.cacheHits;
@@ -64,15 +92,25 @@ export async function createRouterServer(options = {}) {
       });
       response.writeHead(upstreamResponse.status, responseHeaders(upstreamResponse.headers));
       if (!upstreamResponse.body) return response.end();
-      Readable.fromWeb(upstreamResponse.body).pipe(response);
+      if (!shouldTrackUsage(requestUrl.pathname)) {
+        return Readable.fromWeb(upstreamResponse.body).pipe(response);
+      }
+      const capture = createUsageCaptureTransform({
+        requestModel,
+        contentType: upstreamResponse.headers.get("content-type") ?? "",
+        ok: upstreamResponse.ok,
+        onComplete: (record) => usageStore.record({ ...record, kind: "text" })
+      });
+      Readable.fromWeb(upstreamResponse.body).pipe(capture).pipe(response);
     } catch (error) {
       metrics.proxyErrors += 1;
+      if (requestModel) await usageStore.record({ model: requestModel, kind: "text", ok: false });
       const status = error?.code === "REQUEST_TOO_LARGE" ? 413 : 502;
       json(response, status, errorPayload("router_error", formatError(error)));
     }
   });
 
-  return { server, config, metrics, cache };
+  return { server, config, metrics, cache, usageStore };
 }
 
 export async function start() {
@@ -89,7 +127,7 @@ function health(config) {
   return {
     ok: true,
     service: "friend-codex-router",
-    version: "0.1.0",
+    version: "0.2.0",
     listen: `${config.listenHost}:${config.listenPort}`,
     upstream: config.upstreamBaseUrl,
     visionModel: config.visionModel,
@@ -109,6 +147,10 @@ function authorized(request, expected) {
 
 function isResponsesPath(url = "") {
   return /\/(?:v1\/)?responses(?:\?|$)/.test(url);
+}
+
+function shouldTrackUsage(pathname = "") {
+  return /\/(?:v1\/)?(?:responses|chat\/completions|messages)$/.test(pathname);
 }
 
 async function readRequestBody(request, limit) {

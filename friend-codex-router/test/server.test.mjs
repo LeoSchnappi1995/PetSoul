@@ -10,11 +10,18 @@ test("HTTP proxy calls vision once and forwards text-only requests to CCR", asyn
     if (String(url).endsWith("/chat/completions")) {
       visionCalls += 1;
       return new Response(JSON.stringify({
+        model: "qwen-vl-test",
+        usage: { prompt_tokens: 120, completion_tokens: 30, total_tokens: 150 },
         choices: [{ message: { content: "A settings dialog with a Save button." } }]
       }), { status: 200, headers: { "content-type": "application/json" } });
     }
     upstreamBodies.push(JSON.parse(Buffer.from(options.body).toString("utf8")));
-    return new Response(JSON.stringify({ id: "response-test", output: [] }), {
+    return new Response(JSON.stringify({
+      id: "response-test",
+      model: "DeepSeek/deepseek-chat",
+      usage: { input_tokens: 1000, output_tokens: 200, total_tokens: 1200 },
+      output: []
+    }), {
       status: 200,
       headers: { "content-type": "application/json" }
     });
@@ -72,6 +79,12 @@ test("HTTP proxy calls vision once and forwards text-only requests to CCR", asyn
   assert.equal(upstreamBodies.length, 2);
   assert.equal(upstreamBodies.some(containsImageType), false);
   assert.match(JSON.stringify(upstreamBodies[1]), /A settings dialog with a Save button/);
+  const metricsResponse = await fetch(`${base}/metrics?window=week`);
+  const metrics = await metricsResponse.json();
+  assert.equal(metrics.usage.total.requests, 3);
+  assert.equal(metrics.usage.total.visionCalls, 1);
+  assert.equal(metrics.usage.models.find((item) => item.model === "DeepSeek/deepseek-chat").requests, 2);
+  assert.equal(metrics.usage.models.find((item) => item.model === "qwen-vl-test").requests, 1);
 
   async function post(baseUrl, body) {
     const response = await fetch(`${baseUrl}/v1/responses`, {
@@ -83,6 +96,7 @@ test("HTTP proxy calls vision once and forwards text-only requests to CCR", asyn
       body: JSON.stringify(body)
     });
     assert.equal(response.status, 200);
+    await response.text();
   }
 });
 

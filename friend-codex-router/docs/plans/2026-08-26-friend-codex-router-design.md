@@ -14,7 +14,9 @@ The first release is an internal-test build. It provides:
 - a Codex user-config installer with exact backup and safe restore;
 - macOS Keychain storage for local gateway credentials;
 - a LaunchAgent installer and a DMG packaging skeleton;
-- automated tests for image deduplication and explicit re-analysis.
+- automated tests for image deduplication and explicit re-analysis;
+- a compact menu-bar usage dashboard;
+- a signed manifest update channel controlled by the distributor.
 
 The first release does not fork CCR or edit its live SQLite database. DeepSeek and Alibaba Bailian/Qwen are imported through CCR's supported provider flow. A later native setup UI can drive CCR's management API after that API contract is pinned to a tested CCR version.
 
@@ -74,6 +76,17 @@ The installer edits the user-level `~/.codex/config.toml`, because Codex ignores
 - Cache corruption is quarantined and replaced with a new empty cache.
 - Request bodies above the configured limit are rejected with `413`.
 - Secrets are read from Keychain and never returned by health or metrics endpoints.
+- Usage persistence and menu-bar refresh failures never fail a successful model response.
+
+## Usage dashboard
+
+The gateway records completed text and vision calls in daily local rollups. For each resolved model it stores request count, failures, input tokens, output tokens, total tokens, vision-call count, estimated or returned cost, and last-call time. JSON Responses and streaming SSE responses are both parsed for their terminal usage object. The menu-bar app polls the loopback metrics endpoint every ten seconds and defaults to the current Monday-to-today natural-week window.
+
+Costs use upstream-returned cost fields when present. Otherwise they are calculated only from explicitly configured provider pricing. The app never silently invents provider prices.
+
+## Update channel
+
+Remote distribution uses an HTTPS JSON manifest signed with a release Ed25519 private key. The client embeds only the public key. The signed payload binds the version, build number, DMG URL, and SHA-256 digest. Clients poll every fifteen minutes and support manual refresh. A valid newer release is downloaded, hash-checked, and opened for installation. Remote arbitrary commands, unsigned manifests, HTTP URLs, and hash mismatches are rejected.
 
 ## Packaging path
 
@@ -84,4 +97,3 @@ The internal build uses a LaunchAgent plus scripts. The formal DMG will bundle:
 - a SwiftUI first-run configuration app;
 - signed helper binaries for Keychain access and Codex configuration;
 - code signing, hardened runtime, notarization, and a restore/uninstall action.
-

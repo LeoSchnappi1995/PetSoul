@@ -1,4 +1,5 @@
 import { sourceAsVisionUrl } from "./images.mjs";
+import { extractCost, normalizeUsage } from "./usage-store.mjs";
 
 export async function analyzeVision(input) {
   const {
@@ -44,7 +45,12 @@ export async function analyzeVision(input) {
   const content = payload?.choices?.[0]?.message?.content;
   const text = responseText(content) || responseText(payload?.output_text) || rawText;
   if (!text.trim()) throw new Error("Vision model returned an empty analysis.");
-  return { summary: text.trim(), model };
+  return {
+    summary: text.trim(),
+    model: payload?.model ?? model,
+    usage: normalizeUsage(payload?.usage),
+    cost: extractCost(payload)
+  };
 }
 
 function responseText(value) {

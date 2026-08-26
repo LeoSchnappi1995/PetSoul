@@ -30,11 +30,17 @@ export async function loadConfig(configPath = process.env.FRIEND_ROUTER_CONFIG ?
     visionKeychainService: parsed.visionKeychainService ?? "com.friend-codex-router.vision",
     visionKeychainAccount: parsed.visionKeychainAccount ?? "default",
     cacheFile: path.resolve(expandHome(parsed.cacheFile ?? "~/Library/Application Support/Friend Codex Router/vision-cache.json")),
+    usageFile: path.resolve(expandHome(parsed.usageFile ?? "~/Library/Application Support/Friend Codex Router/usage.json")),
+    usageWindow: parsed.usageWindow ?? "week",
+    modelPricing: parsed.modelPricing ?? {},
     visionPromptVersion: parsed.visionPromptVersion ?? "general-v1",
     maxAutoVisionPerRequest: integer(parsed.maxAutoVisionPerRequest, 1),
     maxRequestBytes: integer(parsed.maxRequestBytes, 25 * 1024 * 1024),
     maxImageBytes: integer(parsed.maxImageBytes, 20 * 1024 * 1024),
     visionTimeoutMs: integer(parsed.visionTimeoutMs, 45_000),
+    updateManifestURL: parsed.updateManifestURL ?? "",
+    updatePublicKeyBase64: parsed.updatePublicKeyBase64 ?? "",
+    updateCheckIntervalSeconds: integer(parsed.updateCheckIntervalSeconds, 900),
     configPath: resolvedPath
   };
   validateConfig(config);

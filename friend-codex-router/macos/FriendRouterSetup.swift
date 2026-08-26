@@ -1,19 +1,82 @@
 import AppKit
 import Foundation
+import ServiceManagement
 import SwiftUI
 
 @main
 struct FriendRouterSetupApp: App {
+    @StateObject private var usage = UsageViewModel()
+
     var body: some Scene {
-        WindowGroup("Friend Codex Router") {
-            SetupView()
-                .frame(minWidth: 640, minHeight: 590)
+        MenuBarExtra {
+            UsageMenuView(monitor: usage)
+        } label: {
+            Text(usage.menuTitle)
         }
-        .windowResizability(.contentSize)
+        .menuBarExtraStyle(.menu)
+
+        Settings {
+            SetupView(monitor: usage)
+                .frame(minWidth: 640, minHeight: 590)
+                .task { usage.start() }
+        }
+    }
+}
+
+struct UsageMenuView: View {
+    @ObservedObject var monitor: UsageViewModel
+
+    var body: some View {
+        Group {
+            Text("本自然周累计")
+            if let snapshot = monitor.snapshot {
+                Text(summaryLine(snapshot.total))
+                Text("统计范围：\(snapshot.period.start) 至 \(snapshot.period.end)")
+                Divider()
+                ForEach(Array(snapshot.models.prefix(8))) { item in
+                    Text(modelTitle(item))
+                    Text("  \(item.requests) 次 · 输入 \(item.inputTokens.compactCount) · 输出 \(item.outputTokens.compactCount) · 共 \(item.totalTokens.compactCount)\(item.visionCalls > 0 ? " · 视觉 \(item.visionCalls) 次" : "")")
+                }
+            } else {
+                Text(monitor.lastError ?? "等待本地网关数据…")
+            }
+
+            Divider()
+            Button("立即刷新") { Task { await monitor.refresh() } }
+            Button("设置…") { openSettings() }
+
+            Divider()
+            if let update = monitor.availableUpdate {
+                Button("安装版本 \(update.version)…") { Task { await monitor.downloadAvailableUpdate() } }
+            } else {
+                Button("检查更新…") { Task { await monitor.checkForUpdates(interactive: true) } }
+            }
+            if !monitor.updateStatus.isEmpty { Text(monitor.updateStatus) }
+            Text("版本 \(monitor.currentVersion)")
+            Button("退出") { NSApplication.shared.terminate(nil) }
+        }
+        .task { monitor.start() }
+    }
+
+    private func summaryLine(_ usage: ModelUsage) -> String {
+        let cost = usage.cost > 0 ? "\(usage.cost.dollarText) · " : ""
+        return "\(cost)\(usage.requests) 次调用 · \(usage.totalTokens.compactCount) Tokens"
+    }
+
+    private func modelTitle(_ usage: ModelUsage) -> String {
+        let name = usage.model ?? "unknown"
+        let cost = usage.cost > 0 ? " · \(usage.cost.dollarText)" : ""
+        return "\(name)\(cost)"
+    }
+
+    private func openSettings() {
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        NSApplication.shared.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
     }
 }
 
 struct SetupView: View {
+    @ObservedObject var monitor: UsageViewModel
     @State private var deepSeekKey = ""
     @State private var qwenKey = ""
     @State private var ccrClientKey = ""
@@ -112,6 +175,9 @@ struct SetupView: View {
             _ = try runNode("configure.mjs", environment: environment)
             _ = try runNode("install-codex.mjs", arguments: ["install", "--model=\(textModel)"])
             _ = try runNode("install-service.mjs", arguments: ["install"])
+            try? SMAppService.mainApp.register()
+            monitor.start()
+            await monitor.refresh()
             status = "安装完成。Codex 已指向本地网关；同一张图片默认只调用一次视觉模型。"
         } catch {
             status = "安装失败：\(error.localizedDescription)"
@@ -125,6 +191,7 @@ struct SetupView: View {
         do {
             _ = try? runNode("install-service.mjs", arguments: ["uninstall"])
             _ = try runNode("install-codex.mjs", arguments: ["restore"])
+            try? await SMAppService.mainApp.unregister()
             status = "已停止本地网关并恢复安装前的 Codex 配置。"
         } catch {
             status = "恢复失败：\(error.localizedDescription)"
@@ -136,8 +203,12 @@ struct SetupView: View {
         working = true
         defer { working = false }
         do {
-            let data = try Data(contentsOf: URL(string: "http://127.0.0.1:3566/health")!)
-            status = String(data: data, encoding: .utf8) ?? "网关已响应。"
+            await monitor.refresh()
+            if monitor.reachable {
+                status = "网关正常。当前自然周：\(monitor.snapshot?.total.requests ?? 0) 次调用，\(monitor.snapshot?.total.totalTokens.compactCount ?? "0") Tokens。"
+            } else {
+                throw SetupError(monitor.lastError ?? "本地网关未响应。")
+            }
         } catch {
             status = "网关尚未运行：\(error.localizedDescription)"
         }

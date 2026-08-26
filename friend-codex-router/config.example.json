@@ -12,9 +12,15 @@
   "visionKeychainService": "com.friend-codex-router.vision",
   "visionKeychainAccount": "default",
   "cacheFile": "~/Library/Application Support/Friend Codex Router/vision-cache.json",
+  "usageFile": "~/Library/Application Support/Friend Codex Router/usage.json",
+  "usageWindow": "week",
+  "modelPricing": {},
   "visionPromptVersion": "general-v1",
   "maxAutoVisionPerRequest": 1,
   "maxRequestBytes": 26214400,
   "maxImageBytes": 20971520,
-  "visionTimeoutMs": 45000
+  "visionTimeoutMs": 45000,
+  "updateManifestURL": "",
+  "updatePublicKeyBase64": "",
+  "updateCheckIntervalSeconds": 900
 }
