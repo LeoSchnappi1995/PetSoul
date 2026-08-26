@@ -84,6 +84,14 @@ export async function createRouterServer(options = {}) {
             return result;
           } catch (error) {
             await usageStore.record({ model: config.visionModel, kind: "vision", ok: false });
+            process.stderr.write(`${JSON.stringify({
+              time: new Date().toISOString(),
+              level: "error",
+              event: "vision_request_failed",
+              sourceKind: source?.kind ?? "unknown",
+              model: config.visionModel,
+              error: formatError(error)
+            })}\n`);
             throw error;
           }
         }
@@ -140,7 +148,7 @@ function health(config) {
   return {
     ok: true,
     service: "friend-codex-router",
-    version: "0.3.1",
+    version: "0.3.2",
     listen: `${config.listenHost}:${config.listenPort}`,
     providers: ["deepseek", "qwen"],
     visionModel: config.visionModel,

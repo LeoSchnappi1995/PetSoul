@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const imageTypePattern = /image/i;
 
@@ -90,13 +93,22 @@ export function imageSource(node) {
 }
 
 export async function fingerprintImage(source, options = {}) {
+  return (await prepareImageSource(source, options)).hash;
+}
+
+export async function prepareImageSource(source, options = {}) {
   const fetchFn = options.fetchFn ?? fetch;
   const maxImageBytes = options.maxImageBytes ?? 20 * 1024 * 1024;
   if (!source) throw new Error("Image source is missing.");
   if (source.kind === "data") {
     const bytes = decodeBase64(source.value);
+    if (!bytes.length) throw new Error("Image data is empty or invalid base64.");
     enforceSize(bytes.byteLength, maxImageBytes);
-    return sha256(bytes);
+    const mimeType = imageMimeType(bytes, source.mimeType);
+    return {
+      hash: sha256(bytes),
+      source: { kind: "data", mimeType, value: bytes.toString("base64") }
+    };
   }
   if (source.kind === "url") {
     try {
@@ -105,13 +117,33 @@ export async function fingerprintImage(source, options = {}) {
       const length = Number(response.headers.get("content-length") ?? 0);
       if (length) enforceSize(length, maxImageBytes);
       const bytes = Buffer.from(await response.arrayBuffer());
+      if (!bytes.length) throw new Error("empty response body");
       enforceSize(bytes.byteLength, maxImageBytes);
-      return sha256(bytes);
-    } catch {
-      return sha256(Buffer.from(`url:${source.value}`));
+      const headerType = response.headers.get("content-type")?.split(";")[0];
+      const mimeType = imageMimeType(bytes, headerType);
+      return {
+        hash: sha256(bytes),
+        source: { kind: "data", mimeType, value: bytes.toString("base64") }
+      };
+    } catch (error) {
+      throw new Error(`Image download failed from ${safeSourceLabel(source.value)}: ${formatError(error)}`);
     }
   }
-  return sha256(Buffer.from(`${source.kind}:${source.value}`));
+  if (source.kind === "file") {
+    try {
+      const bytes = await readFile(source.value);
+      if (!bytes.length) throw new Error("empty file");
+      enforceSize(bytes.byteLength, maxImageBytes);
+      const mimeType = imageMimeType(bytes, mimeFromExtension(source.value));
+      return {
+        hash: sha256(bytes),
+        source: { kind: "data", mimeType, value: bytes.toString("base64") }
+      };
+    } catch (error) {
+      throw new Error(`Local image read failed for ${safeSourceLabel(source.value)}: ${formatError(error)}`);
+    }
+  }
+  throw new Error(`Unsupported image source kind: ${source.kind}`);
 }
 
 export function sourceAsVisionUrl(source) {
@@ -143,6 +175,10 @@ function classifyStringSource(value, node) {
       : { kind: "data", mimeType: node.media_type ?? node.mime_type, value };
   }
   if (/^https?:\/\//i.test(value)) return { kind: "url", value };
+  if (/^file:\/\//i.test(value)) {
+    try { return { kind: "file", value: fileURLToPath(value) }; } catch { return { kind: "reference", value }; }
+  }
+  if (path.isAbsolute(value)) return { kind: "file", value };
   if (/^[A-Za-z0-9+/=\s]+$/.test(value) && value.length > 128) {
     return base64Source(value, node.media_type ?? node.mime_type);
   }
@@ -168,6 +204,37 @@ function sha256(value) {
 
 function enforceSize(size, max) {
   if (size > max) throw new Error(`Image exceeds ${max} bytes.`);
+}
+
+function imageMimeType(bytes, hinted) {
+  if (bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (bytes.subarray(0, 6).toString("ascii") === "GIF87a" || bytes.subarray(0, 6).toString("ascii") === "GIF89a") return "image/gif";
+  if (bytes.subarray(0, 4).toString("ascii") === "RIFF" && bytes.subarray(8, 12).toString("ascii") === "WEBP") return "image/webp";
+  if (typeof hinted === "string" && hinted.startsWith("image/")) return hinted;
+  throw new Error("Downloaded content is not a supported PNG, JPEG, GIF, or WebP image.");
+}
+
+function mimeFromExtension(value) {
+  switch (path.extname(value).toLowerCase()) {
+    case ".jpg": case ".jpeg": return "image/jpeg";
+    case ".gif": return "image/gif";
+    case ".webp": return "image/webp";
+    default: return "image/png";
+  }
+}
+
+function safeSourceLabel(value) {
+  try {
+    const url = new URL(value);
+    return `${url.protocol}//${url.host}${url.pathname.slice(0, 80)}`;
+  } catch {
+    return path.basename(String(value));
+  }
+}
+
+function formatError(error) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function isRecord(value) {

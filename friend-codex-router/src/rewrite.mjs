@@ -2,7 +2,7 @@ import {
   collectImageEntries,
   extractText,
   findLatestUserMessage,
-  fingerprintImage,
+  prepareImageSource,
   replacementNode,
   replaceEntry
 } from "./images.mjs";
@@ -25,11 +25,13 @@ export async function rewriteRequestWithVision(body, options) {
 
   for (const entry of entries) {
     try {
-      entry.hash = await fingerprintImage(entry.source, {
+      const prepared = await prepareImageSource(entry.source, {
         fetchFn: options.fetchFn,
         maxImageBytes: options.maxImageBytes,
         timeoutMs: options.imageFetchTimeoutMs
       });
+      entry.hash = prepared.hash;
+      entry.preparedSource = prepared.source;
       entry.cached = await options.cache.get(entry.hash, options.promptVersion);
       if (entry.cached) metrics.cacheHits += 1;
     } catch (error) {
@@ -42,7 +44,7 @@ export async function rewriteRequestWithVision(body, options) {
     if (!entry.source || entry.source.kind === "file_id" || entry.source.kind === "reference") continue;
     try {
       const result = await options.analyze({
-        source: entry.source,
+        source: entry.preparedSource ?? entry.source,
         prompt: buildVisionPrompt(latestUserText, metrics.explicitReanalysis),
         force: metrics.explicitReanalysis,
         hash: entry.hash

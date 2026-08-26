@@ -123,6 +123,29 @@ test("automatic vision budget prevents a multi-image cost burst", async () => {
   assert.match(JSON.stringify(result.body), /自动视觉预算已用完/);
 });
 
+test("temporary image URLs are downloaded locally and sent to vision as inline data", async () => {
+  const cache = new VisionCache(":memory:");
+  const png = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    Buffer.from("test-image-body")
+  ]);
+  let analyzedSource;
+  const result = await rewriteRequestWithVision(requestWithImage("http://127.0.0.1:9999/private-image", "Read it"), {
+    cache,
+    promptVersion: "test-v1",
+    maxAutoVisionPerRequest: 1,
+    fetchFn: async () => new Response(png, { status: 200, headers: { "content-type": "image/png" } }),
+    analyze: async ({ source }) => {
+      analyzedSource = source;
+      return { summary: "inline image understood", model: "vision-test" };
+    }
+  });
+  assert.equal(analyzedSource.kind, "data");
+  assert.equal(analyzedSource.mimeType, "image/png");
+  assert.equal(Buffer.from(analyzedSource.value, "base64").equals(png), true);
+  assert.match(JSON.stringify(result.body), /inline image understood/);
+});
+
 function requestWithImage(url, text) {
   return {
     model: "friend-router",
